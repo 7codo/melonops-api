@@ -19,11 +19,4 @@ ENV PYTHONPATH=/app/src
 ENV HOST=0.0.0.0
 ENV PORT=8000
 
-ENV DATABASE_URL=""
-ENV GOOGLE_CLIENT_ID=""
-ENV GOOGLE_CLIENT_SECRET=""
-ENV GOOGLE_API_KEY=""
-ENV AZURE_INFERENCE_CREDENTIAL=""
-ENV AZURE_INFERENCE_ENDPOINT=""
-
 CMD ["gunicorn", "app.api.main:app", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
