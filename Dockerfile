@@ -11,4 +11,4 @@ EXPOSE 8000
 
 ENV PYTHONPATH=/app/src
 
-CMD ["python", "src/main.py"]
+CMD ["python", "src/app/api/main.py"]
