@@ -10,6 +10,8 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.lib.config import get_settings
 import logging
 import sys
+import uvicorn
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -80,16 +82,16 @@ def health():
 
 
 # For dev env
-# def main():
-#     """Run the uvicorn server."""
-#     port = int(os.getenv("PORT", "8000"))
-#     uvicorn.run(
-#         "app.api.main:app",  # the path to your FastAPI file, replace this if its different
-#         host="localhost",
-#         port=port,
-#         reload=True,  # Disable reload in production
-#     )
+def main():
+    """Run the uvicorn server."""
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(
+        "app.api.main:app",  # the path to your FastAPI file, replace this if its different
+        host="localhost",
+        port=port,
+        reload=True,  # Disable reload in production
+    )
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
