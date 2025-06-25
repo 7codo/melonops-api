@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 origins = ["http://localhost:3000"]
 
 settings = get_settings()
+logging.warning(f"Current settings: {settings.model_dump()}")
 
 
 @asynccontextmanager
