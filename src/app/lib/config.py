@@ -4,10 +4,10 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    database_url: str
+    database_url: str = ""
     google_api_key: Optional[str] = None
-    google_client_id: str
-    google_client_secret: str
+    google_client_id: str = ""
+    google_client_secret: str = ""
     azure_inference_credential: Optional[str] = None
     azure_inference_endpoint: Optional[str] = None
 
