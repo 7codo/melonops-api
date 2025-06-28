@@ -61,7 +61,7 @@ colorama==0.4.6
     #   click
     #   tqdm
     #   uvicorn
-copilotkit==0.1.49
+copilotkit==0.1.51
     # via melonops-api (pyproject.toml)
 cryptography==45.0.4
     # via
@@ -150,13 +150,13 @@ jsonschema==4.24.0
     # via mcp
 jsonschema-specifications==2025.4.1
     # via jsonschema
-langchain==0.3.26
+langchain==0.3.21
     # via
     #   copilotkit
     #   langchain-community
 langchain-azure-ai==0.1.4
     # via melonops-api (pyproject.toml)
-langchain-community==0.3.26
+langchain-community==0.3.20
     # via melonops-api (pyproject.toml)
 langchain-core==0.3.66
     # via
@@ -170,7 +170,6 @@ langchain-core==0.3.66
     #   langgraph
     #   langgraph-checkpoint
     #   langgraph-prebuilt
-    #   langgraph-supervisor
 langchain-google-genai==2.1.5
     # via melonops-api (pyproject.toml)
 langchain-mcp-adapters==0.1.7
@@ -179,11 +178,10 @@ langchain-openai==0.3.27
     # via langchain-azure-ai
 langchain-text-splitters==0.3.8
     # via langchain
-langgraph==0.5.0
+langgraph==0.3.18
     # via
     #   melonops-api (pyproject.toml)
     #   copilotkit
-    #   langgraph-supervisor
 langgraph-checkpoint==2.1.0
     # via
     #   langgraph
@@ -191,15 +189,11 @@ langgraph-checkpoint==2.1.0
     #   langgraph-prebuilt
 langgraph-checkpoint-postgres==2.0.21
     # via melonops-api (pyproject.toml)
-langgraph-prebuilt==0.5.1
-    # via
-    #   langgraph
-    #   langgraph-supervisor
+langgraph-prebuilt==0.1.8
+    # via langgraph
 langgraph-sdk==0.1.72
     # via langgraph
-langgraph-supervisor==0.0.27
-    # via melonops-api (pyproject.toml)
-langsmith==0.4.4
+langsmith==0.3.45
     # via
     #   langchain
     #   langchain-community
@@ -287,7 +281,6 @@ pydantic==2.11.7
     #   langchain
     #   langchain-core
     #   langchain-google-genai
-    #   langgraph
     #   langsmith
     #   mcp
     #   openai
@@ -410,7 +403,7 @@ tzdata==2025.2
     # via psycopg
 urllib3==2.5.0
     # via requests
-uvicorn==0.34.3
+uvicorn==0.35.0
     # via
     #   fastapi
     #   fastapi-cli
@@ -419,8 +412,6 @@ watchfiles==1.1.0
     # via uvicorn
 websockets==15.0.1
     # via uvicorn
-xxhash==3.5.0
-    # via langgraph
 yarl==1.20.1
     # via aiohttp
 zipp==3.23.0

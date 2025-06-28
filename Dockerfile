@@ -5,14 +5,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv
+RUN pip install uv
+
 WORKDIR /app
 
 # Copy only dependency files first for better caching
 COPY pyproject.toml ./
 # COPY poetry.lock ./  # Uncomment if you use Poetry
 
-# Install dependencies
-RUN pip install --no-cache-dir . uvicorn[standard] gunicorn
+# Install dependencies using uv
+RUN uv pip install --no-cache-dir . uvicorn[standard] gunicorn
 
 # Copy the rest of the code
 COPY src ./src
