@@ -76,7 +76,7 @@ async def agent_node(state: AgentState, config: RunnableConfig):
     )
 
     response = await agent.ainvoke({"messages": state["messages"]}, config)
-
+    logger.warn(f"\n\nresponse messages: {response['messages']}\n\n")
     return {
         "messages": response["messages"],
     }
