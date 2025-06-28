@@ -17,7 +17,11 @@ import uvicorn
 import os
 from typing import List
 from fastapi import HTTPException
-from app.api.dependencies import print_request_headers
+from app.api.dependencies import (
+    print_request_headers,
+    set_checkpointer,
+    get_checkpointer,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +45,10 @@ async def lifespan(app: FastAPI):
     ) as checkpointer:
         logger.info("Setting up checkpointer...")
         await checkpointer.setup()
+
+        # Set the checkpointer instance globally
+        set_checkpointer(checkpointer)
+
         chat_graph = chat_workflow.compile(checkpointer=checkpointer)
         agent_graph = agent_workflow.compile(checkpointer=checkpointer)
         logger.info("Workflows compiled successfully")
@@ -103,6 +111,22 @@ def health():
     """Health check."""
     logger.debug("Health check endpoint called")
     return {"status": "ok"}
+
+
+@app.delete("/checkpointer/{thread_id}")
+async def delete_checkpointer(
+    thread_id: str, checkpointer: AsyncPostgresSaver = Depends(get_checkpointer)
+):
+    """Delete a checkpointer thread."""
+    try:
+        await checkpointer.adelete_thread(thread_id)
+        logger.info(f"Successfully deleted checkpointer thread: {thread_id}")
+        return {"message": f"Checkpointer thread {thread_id} deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete checkpointer thread: {str(e)}"
+        )
 
 
 # For dev env

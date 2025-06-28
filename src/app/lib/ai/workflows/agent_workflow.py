@@ -77,8 +77,14 @@ async def agent_node(state: AgentState, config: RunnableConfig):
 
     response = await agent.ainvoke({"messages": state["messages"]}, config)
     logger.warn(f"\n\nresponse messages: {response['messages']}\n\n")
+
+    # Extract only the new messages that were added in this step
+    # The response contains all messages, but we only want the new ones
+    original_message_count = len(state["messages"])
+    new_messages = response["messages"][original_message_count:]
+
     return {
-        "messages": response["messages"],
+        "messages": new_messages,
     }
 
 

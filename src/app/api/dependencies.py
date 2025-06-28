@@ -1,10 +1,29 @@
 from datetime import datetime
 from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session, select
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from typing import Optional
 
 from app.lib.db.database import engine
 
 # from app.lib.db.models import Session as SessionModel
+
+# Global variable to store the checkpointer instance
+_checkpointer: Optional[AsyncPostgresSaver] = None
+
+
+def set_checkpointer(checkpointer: AsyncPostgresSaver):
+    """Set the global checkpointer instance."""
+    global _checkpointer
+    _checkpointer = checkpointer
+
+
+async def get_checkpointer() -> AsyncPostgresSaver:
+    """Get the global checkpointer instance."""
+    global _checkpointer
+    if _checkpointer is None:
+        raise HTTPException(status_code=500, detail="Checkpointer not initialized")
+    return _checkpointer
 
 
 # async def get_sqlmodel_session():
