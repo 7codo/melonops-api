@@ -1,10 +1,11 @@
 import logging
 import sys
+
+from app.lib.config import get_settings
 from copilotkit import CopilotKitState
+from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
-from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
-from app.lib.config import get_settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,11 +30,6 @@ class State(CopilotKitState):
 
 
 def chat_node(state: State, config: RunnableConfig):
-    configurable = config.get("configurable", {})
-    # llm = configurable.get("llm", "google_genai:gemini-2.0-flash")
-
-    # print(f"llm: {llm}")
-    # model = init_chat_model(llm, temperature=0)
     messages = state["messages"]
     response = model.invoke(messages)
     return {

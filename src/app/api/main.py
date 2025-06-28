@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
 from app.lib.db.database import create_db_and_tables
+from app.lib.db.models import MCPModel
 from copilotkit.integrations.fastapi import add_fastapi_endpoint
 from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
 from app.lib.ai.workflows.chat_workflow import chat_workflow
@@ -12,6 +15,9 @@ import logging
 import sys
 import uvicorn
 import os
+from typing import List
+from fastapi import HTTPException
+from app.api.dependencies import print_request_headers
 
 # Configure logging
 logging.basicConfig(
@@ -30,10 +36,6 @@ logging.warning(f"Current settings: {settings.model_dump()}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing application...")
-    create_db_and_tables()
-    logger.info("Database and tables created successfully")
-
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
@@ -59,12 +61,15 @@ async def lifespan(app: FastAPI):
         )
 
         add_fastapi_endpoint(app, sdk, "/copilotkit")
+        logger.info("Initializing application...")
+        create_db_and_tables()
+        logger.info("Database and tables created successfully")
         logger.info("Application startup completed successfully")
         yield
         logger.info("Shutting down application...")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, dependencies=[Depends(print_request_headers)])
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,6 +78,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class GetToolsRequest(BaseModel):
+    mcps: List[MCPModel]
+    user_id: str
+
+
+@app.post("/get_tools")
+async def get_tools(request: GetToolsRequest):
+    """Get tools from MCPs."""
+    try:
+        tools = await get_tools_from_mcps(request.mcps, request.user_id)
+        return [{"name": tool.name, "description": tool.description} for tool in tools]
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error getting tools: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/health")

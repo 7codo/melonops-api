@@ -62,3 +62,15 @@ class AgentMcpModel(SQLModel, table=True):
     agent_id: UUID = Field(foreign_key="agent.id", nullable=False)
     mcp_id: UUID = Field(foreign_key="mcp.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class TaskModel(SQLModel, table=True):
+    __tablename__: str = "task"
+
+    id: UUID = Field(
+        default_factory=uuid4, primary_key=True, nullable=False, unique=True
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    title: str = Field(nullable=False)
+    user_id: str = Field(foreign_key="user.id", nullable=False)
+    agent_id: UUID = Field(foreign_key="agent.id", nullable=False)

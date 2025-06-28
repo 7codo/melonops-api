@@ -51,3 +51,7 @@ from app.lib.db.database import engine
 #         )
 
 #     return session_from_db
+
+
+def print_request_headers(request: Request):
+    print(f"\n\n\nRequest headers: {dict(request)}\n\n\n")
