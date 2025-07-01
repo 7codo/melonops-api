@@ -73,4 +73,4 @@ async def get_checkpointer() -> AsyncPostgresSaver:
 
 
 def print_request_headers(request: Request):
-    print(f"\n\n\nRequest headers: {dict(request)}\n\n\n")
+    print("")

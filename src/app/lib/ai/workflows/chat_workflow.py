@@ -1,11 +1,12 @@
 import logging
 import sys
 
+from langgraph.checkpoint.memory import MemorySaver
+
 from app.lib.config import get_settings
-from copilotkit import CopilotKitState
 from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, MessagesState, StateGraph
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +26,7 @@ model = AzureAIChatCompletionsModel(
 )
 
 
-class State(CopilotKitState):
+class State(MessagesState):
     pass
 
 
@@ -42,3 +43,5 @@ chat_workflow.add_node("chat", chat_node)
 
 chat_workflow.set_entry_point("chat")
 chat_workflow.add_edge("chat", END)
+checkpointer = MemorySaver()
+chat_graph = chat_workflow.compile(checkpointer=checkpointer)
