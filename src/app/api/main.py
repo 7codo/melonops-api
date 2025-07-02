@@ -1,22 +1,18 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from app.api.streaming_handler import streaming_handler
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
-from app.api.serializable import MessageAwareSerializer
 from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 # from app.lib.ai.workflows.test_workflow import test_graph
 from app.lib.db.database import create_db_and_tables
 from app.lib.db.models import MCPModel
-from copilotkit.integrations.fastapi import add_fastapi_endpoint
-from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
 from app.lib.ai.workflows.test_workflow import test_workflow
 from app.lib.config import get_settings
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langchain_core.load import dumpd, dumps, load, loads
 import logging
 import sys
 import uvicorn
@@ -26,62 +22,38 @@ import os
 from typing import List
 from fastapi import HTTPException
 from app.api.dependencies import (
-    set_checkpointer,
     get_checkpointer,
 )
-import sys
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+import asyncio
+from fastapi.responses import StreamingResponse
+import json
+from typing import Dict, Any, AsyncGenerator
+import sys
+
+# ... (other imports and Windows event loop policy setup)
 
 logger = logging.getLogger(__name__)
-
 origins = ["http://localhost:3000"]
-
 settings = get_settings()
-logging.warning(f"Current settings: {settings.model_dump()}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # serializer = MessageAwareSerializer()
+    logger.info("Initializing application...")
+    create_db_and_tables()
 
+    # Initialize graph in memory
+    logger.info("Initializing graph and checkpointer...")
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
-        logger.info("Setting up checkpointer...")
-
         await checkpointer.setup()
-
-        # Set the checkpointer instance globally
-        # set_checkpointer(checkpointer)
-
-        # chat_graph = chat_workflow.compile(checkpointer=checkpointer)
-        # agent_graph = agent_workflow.compile(checkpointer=checkpointer)
-        test_graph = test_workflow.compile(checkpointer=checkpointer)
-        logger.info("Workflows compiled successfully")
-
-        sdk = CopilotKitRemoteEndpoint(
-            agents=[
-                LangGraphAgent(
-                    name="test_agent",
-                    description="",
-                    graph=test_graph,
-                ),
-            ],
-        )
-
-        add_fastapi_endpoint(app, sdk, "/copilotkit")
-        # logger.info("Initializing application...")
-        # create_db_and_tables()
-        # logger.info("Database and tables created successfully")
+        app.state.checkpointer = checkpointer
+        app.state.graph = test_workflow.compile()  # checkpointer=checkpointer
         logger.info("Application startup completed successfully")
         yield
         logger.info("Shutting down application...")
@@ -97,6 +69,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class CopilotRequest(BaseModel):
+    thread_id: str
+    agent_id: str
+    messages: list
+    id: str
+
+
+@app.post("/copilot")
+async def copilotkit(request: Request):
+    body = await request.json()
+    thread_id = body["thread_id"]
+    messages = body["messages"]
+
+    # Get pre-initialized graph from app state
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Create streaming response with AI SDK protocol
+    return StreamingResponse(
+        streaming_handler(graph, {"messages": messages}, config),
+        media_type="text/plain; charset=utf-8",
+        headers={"x-vercel-ai-data-stream": "v1"},
+    )
 
 
 class GetToolsRequest(BaseModel):
@@ -117,7 +114,7 @@ async def get_tools(request: GetToolsRequest):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/health")
+@app.get("/healthy")
 def health():
     """Health check."""
     logger.debug("Health check endpoint called")
