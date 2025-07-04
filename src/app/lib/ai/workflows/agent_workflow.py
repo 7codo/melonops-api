@@ -1,19 +1,17 @@
-from uuid import UUID
-from langgraph.graph import StateGraph, END
-from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
-from langgraph.graph.message import MessagesState
-from langgraph.prebuilt import create_react_agent
-from sqlmodel import Session, select
-from app.lib.db.models import AgentModel, MCPModel, AgentMcpModel
-from app.lib.db.database import engine
-from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
-from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
-from app.lib.config import get_settings
-from langchain_core.tools import tool
 import asyncio
 import logging
 import sys
+
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.graph import END, StateGraph
+from langgraph.graph.message import MessagesState
+from langgraph.prebuilt import create_react_agent
+
+from app.lib.actions import generate_agent_data, get_right_model
+from app.lib.config import get_settings
+from app.lib.constants import default_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,75 +33,31 @@ class AgentState(MessagesState):
     pass
 
 
-model = AzureAIChatCompletionsModel(
-    credential=settings.azure_inference_credential,
-    endpoint=settings.azure_inference_endpoint,
-    api_version="2024-12-01-preview",
-    model="gpt-4.1-mini",
-)
-
-
 async def agent_node(state: AgentState, config: RunnableConfig):
     print("AGENT TRIGGER")
     configurable = config.get("configurable", {})
-    # llm = configurable.get("llm", "google_genai:gemini-2.0-flash")
-    userId = configurable.get("user_id")
-    agentId = configurable.get("agent_id")
+    llm = configurable.get("llm", default_model)
+    user_id = configurable.get("user_id", None)
+    agent_id = configurable.get("agent_id", None)
 
-    # if not userId:
-    #     raise ValueError("user_id is required in config")
-    # if not agentId:
-    #     raise ValueError("agent_id is required in config")
+    if not user_id:
+        raise ValueError("user_id is required in config")
+    if not agent_id:
+        raise ValueError("agent_id is required in config")
 
-    # # Fetch agent
-    # with Session(engine) as session:
-    #     agent_data = session.exec(
-    #         select(AgentModel).where(AgentModel.id == agentId)
-    #     ).first()
+    model = get_right_model(llm)
+    agent_data = await generate_agent_data(agent_id=agent_id, user_id=user_id)
 
-    #     if not agent_data:
-    #         raise ValueError(f"Agent with id {agentId} not found")
-    #     # Fetch related MCPs
-    #     agent_mcp_links = list(
-    #         session.exec(select(AgentMcpModel).where(AgentMcpModel.agent_id == agentId))
-    #     )
-
-    #     mcp_ids: list[UUID] = [link.mcp_id for link in agent_mcp_links]
-
-    #     tools = []
-    #     if mcp_ids:  # Only query MCPs if there are IDs
-    #         statement = select(MCPModel).where(MCPModel.id.in_(mcp_ids))  # type: ignore
-    #         mcps = list(session.exec(statement).all())
-
-    #         # Generate tools from MCPs
-    #         tools = await get_tools_from_mcps(mcps, userId)
-
-    # Pass tools, name, and system_prompt to create_react_agent
-
-    print(f"\n\nstate messages: {state['messages']}\n\n")
     agent = create_react_agent(
         model,
-        tools=[check_weather],
+        tools=agent_data["tools"],
+        name=agent_data["name"],
+        prompt=agent_data["system_prompt"],
     )
-    print("\n\nAfter create the agent\n\n")
-    # what are google sheets I have
-    response = agent.invoke(
-        {"messages": [HumanMessage("check the weather in Algeria")]}, config
-    )
-    print(f"\n\response messages: {response['messages']}\n\n")
-    # Extract only the new messages that were added in this step
-    # The response contains all messages, but we only want the new ones
-    # formatted_response = []
-    # for msg in response["messages"]:
-    #     if isinstance(msg, ToolMessage):
-    #         print(f"pass: {msg}")
-    #         pass
-    #     formatted_response.append(msg)
-
-    # print(f"\n\nresponse messages: {state["messages"]}\n\n")
+    response = agent.invoke({"messages": state["messages"]}, config)
 
     return {
-        "messages": [AIMessage("No problem")],
+        "messages": response["messages"],
     }
 
 

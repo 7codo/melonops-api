@@ -26,9 +26,9 @@ async def get_checkpointer() -> AsyncPostgresSaver:
     return _checkpointer
 
 
-# async def get_sqlmodel_session():
-#     with Session(engine) as session:
-#         yield session
+def get_sqlmodel_session():
+    with Session(engine) as session:
+        yield session
 
 
 # async def verify_session_token(

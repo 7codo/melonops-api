@@ -1,35 +1,30 @@
 import asyncio
+import logging
+import os
+import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import BaseMessage
-from pydantic import BaseModel
-from app.api.serializable import MessageAwareSerializer
-from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from typing import List
 
-# from app.lib.ai.workflows.test_workflow import test_graph
+import uvicorn
+from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
+from copilotkit.integrations.fastapi import add_fastapi_endpoint
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from pydantic import BaseModel
+from sqlmodel import select
+
+from app.api.dependencies import (
+    get_checkpointer,
+    get_sqlmodel_session,
+    set_checkpointer,
+)
+from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
+from app.lib.ai.workflows.agent_workflow import agent_workflow
+from app.lib.ai.workflows.chat_workflow import chat_workflow
+from app.lib.config import get_settings
 from app.lib.db.database import create_db_and_tables
 from app.lib.db.models import MCPModel
-from copilotkit.integrations.fastapi import add_fastapi_endpoint
-from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
-from app.lib.ai.workflows.test_workflow import test_workflow
-from app.lib.config import get_settings
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langchain_core.load import dumpd, dumps, load, loads
-import logging
-import sys
-import uvicorn
-import os
-
-
-from typing import List
-from fastapi import HTTPException
-from app.api.dependencies import (
-    set_checkpointer,
-    get_checkpointer,
-)
-import sys
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -51,8 +46,6 @@ logging.warning(f"Current settings: {settings.model_dump()}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # serializer = MessageAwareSerializer()
-
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
@@ -61,27 +54,32 @@ async def lifespan(app: FastAPI):
         await checkpointer.setup()
 
         # Set the checkpointer instance globally
-        # set_checkpointer(checkpointer)
+        set_checkpointer(checkpointer)
 
-        # chat_graph = chat_workflow.compile(checkpointer=checkpointer)
-        # agent_graph = agent_workflow.compile(checkpointer=checkpointer)
-        test_graph = test_workflow.compile(checkpointer=checkpointer)
+        chat_graph = chat_workflow.compile(checkpointer=checkpointer)
+        agent_graph = agent_workflow.compile(checkpointer=checkpointer)
+
         logger.info("Workflows compiled successfully")
 
         sdk = CopilotKitRemoteEndpoint(
             agents=[
                 LangGraphAgent(
-                    name="test_agent",
+                    name="chat_agent",
                     description="",
-                    graph=test_graph,
+                    graph=chat_graph,
+                ),
+                LangGraphAgent(
+                    name="agent_agent",
+                    description="",
+                    graph=agent_graph,
                 ),
             ],
         )
 
         add_fastapi_endpoint(app, sdk, "/copilotkit")
-        # logger.info("Initializing application...")
-        # create_db_and_tables()
-        # logger.info("Database and tables created successfully")
+        logger.info("Initializing application...")
+        create_db_and_tables()
+        logger.info("Database and tables created successfully")
         logger.info("Application startup completed successfully")
         yield
         logger.info("Shutting down application...")
@@ -100,15 +98,18 @@ app.add_middleware(
 
 
 class GetToolsRequest(BaseModel):
-    mcps: List[MCPModel]
+    mcps_ids: List[str]
     user_id: str
 
 
 @app.post("/get_tools")
-async def get_tools(request: GetToolsRequest):
+async def get_tools(request: GetToolsRequest, session=Depends(get_sqlmodel_session)):
     """Get tools from MCPs."""
     try:
-        tools = await get_tools_from_mcps(request.mcps, request.user_id)
+        # Retrieve MCPs by IDs
+        statement = select(MCPModel).where(MCPModel.id.in_(request.mcps_ids))  # type: ignore
+        mcps = list(session.exec(statement).all())
+        tools = await get_tools_from_mcps(mcps, request.user_id)
         return [{"name": tool.name, "description": tool.description} for tool in tools]
     except HTTPException as e:
         raise e
