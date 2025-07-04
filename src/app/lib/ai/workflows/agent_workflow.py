@@ -54,7 +54,7 @@ async def agent_node(state: AgentState, config: RunnableConfig):
         name=agent_data["name"],
         prompt=agent_data["system_prompt"],
     )
-    response = agent.invoke({"messages": state["messages"]}, config)
+    response = await agent.ainvoke({"messages": state["messages"]}, config)
 
     return {
         "messages": response["messages"],

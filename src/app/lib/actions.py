@@ -50,12 +50,7 @@ async def generate_agent_data(*, agent_id: str, user_id: str) -> dict:
         dict: A dictionary containing agent data and a list of tools.
     """
     with Session(engine) as session:
-        agent_data = session.exec(
-            select(AgentModel).where(AgentModel.id == agent_id)
-        ).first()
-
-        if not agent_data:
-            raise ValueError(f"Agent with id {agent_id} not found")
+        agent_data = await get_agent(agent_id)
 
         # Fetch related MCPs
         agent_mcp_links = list(
@@ -80,3 +75,14 @@ async def generate_agent_data(*, agent_id: str, user_id: str) -> dict:
             "tools": tools,
         }
         return agent_info
+
+
+async def get_agent(agent_id: str) -> AgentModel:
+    with Session(engine) as session:
+        agent_data = session.exec(
+            select(AgentModel).where(AgentModel.id == agent_id)
+        ).first()
+
+        if not agent_data:
+            raise ValueError(f"Agent with id {agent_id} not found")
+        return agent_data

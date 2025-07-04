@@ -1,8 +1,8 @@
-from datetime import datetime
-from fastapi import Depends, HTTPException, Request, status
-from sqlmodel import Session, select
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from typing import Optional
+
+from fastapi import HTTPException
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from sqlmodel import Session
 
 from app.lib.db.database import engine
 
@@ -70,7 +70,3 @@ def get_sqlmodel_session():
 #         )
 
 #     return session_from_db
-
-
-def print_request_headers(request: Request):
-    print("")
