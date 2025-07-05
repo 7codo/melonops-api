@@ -1,14 +1,14 @@
 import logging
 import sys
 
-from langchain_core.messages import SystemMessage
+from copilotkit import CopilotKitState
+from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, MessagesState, StateGraph
+from langgraph.graph import END, StateGraph
 
 from app.lib.actions import get_agent, get_right_model
 from app.lib.config import get_settings
-from app.lib.constants import default_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,35 +21,62 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-class State(MessagesState):
-    pass
+class State(CopilotKitState):
+    system_message: str | None
+    llm: str | None
 
 
 async def chat_node(state: State, config: RunnableConfig):
-    configurable = config.get("configurable", {})
-    llm = configurable.get("llm", default_model)
-    user_id = configurable.get("user_id", None)
-    agent_id = configurable.get("agent_id", None)
+    try:
+        configurable = config.get("configurable", {})
+        llm = configurable.get("llm", None)
+        agent_id = configurable.get("agent_id", None)
 
-    if not user_id:
-        raise ValueError("user_id is required in config")
-    if not agent_id:
-        raise ValueError("agent_id is required in config")
+        system_prompt_state = state.get("system_message")
 
-    # TODO: Implement get_agent function or import it
-    messages = state["messages"]
+        if system_prompt_state is None and agent_id is not None:
+            agent = await get_agent(agent_id)
+            system_prompt_state = agent.system_prompt
 
-    # Check if the last message is not a SystemMessage
-    if not isinstance(messages[-1], SystemMessage):
-        agent = await get_agent(agent_id)
-        if agent.system_prompt:
-            messages = [SystemMessage(content=agent.system_prompt)] + messages
+        messages = state["messages"]
+        if system_prompt_state:
+            messages = [SystemMessage(content=system_prompt_state)] + messages
+        llm_state = state.get("llm")
+        if llm is not None and llm_state is None:
+            llm_state = llm
 
-    model = get_right_model(llm)
-    response = await model.ainvoke(messages)
-    return {
-        "messages": [response],
-    }
+        if llm_state is None:
+            raise ValueError("LLM value is required!")
+
+        model = get_right_model(llm_state)
+        response = await model.ainvoke(messages)
+        return {
+            "messages": [response],
+            "system_message": system_prompt_state,
+            "llm": llm_state,
+        }
+    except ValueError as e:
+        logger.error(f"Validation error in agent_node: {e}")
+        messages = state["messages"].append(AIMessage(f"Error: {str(e)}"))
+        return {
+            "messages": messages,
+            "llm": llm_state if "llm_state" in locals() else None,
+            "system_prompt": system_prompt_state
+            if "system_prompt_state" in locals()
+            else None,
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in agent_node: {e}", exc_info=True)
+        messages = state["messages"].append(
+            AIMessage("An unexpected error occurred. Please try again.")
+        )
+        return {
+            "messages": messages,
+            "llm": llm_state if "llm_state" in locals() else None,
+            "system_prompt": system_prompt_state
+            if "system_prompt_state" in locals()
+            else None,
+        }
 
 
 chat_workflow = StateGraph(State)

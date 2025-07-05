@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from sqlmodel import Session, select
 
 from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
+from app.lib.caching_utils import async_cached_function, cached_function
 from app.lib.config import get_settings
 from app.lib.constants import (
     support_google_models,
@@ -18,6 +19,7 @@ from app.lib.db.models import AgentMcpModel, AgentModel, MCPModel
 settings = get_settings()
 
 
+@cached_function(ttl=3600)  # Cache for 1 hour
 def get_right_model(llm: str) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
     if llm not in support_models:
         raise Exception("This model is not supported")
@@ -38,7 +40,8 @@ def get_right_model(llm: str) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
     return model
 
 
-async def generate_agent_data(*, agent_id: str, user_id: str) -> dict:
+@async_cached_function(ttl=1800)  # Cache for 30 minutes
+async def generate_tools(*, agent_id: str, user_id: str):
     """
     Retrieve agent data and associated tools for a given agent and user.
 
@@ -50,8 +53,6 @@ async def generate_agent_data(*, agent_id: str, user_id: str) -> dict:
         dict: A dictionary containing agent data and a list of tools.
     """
     with Session(engine) as session:
-        agent_data = await get_agent(agent_id)
-
         # Fetch related MCPs
         agent_mcp_links = list(
             session.exec(
@@ -68,15 +69,10 @@ async def generate_agent_data(*, agent_id: str, user_id: str) -> dict:
             tools = await get_tools_from_mcps(mcps, user_id)
 
         # Prepare enhanced agent data dictionary
-        agent_info = {
-            "id": str(agent_data.id),
-            "name": getattr(agent_data, "name", None),
-            "system_prompt": getattr(agent_data, "system_prompt", None),
-            "tools": tools,
-        }
-        return agent_info
+        return tools
 
 
+@async_cached_function(ttl=3600)  # Cache for 1 hour
 async def get_agent(agent_id: str) -> AgentModel:
     with Session(engine) as session:
         agent_data = session.exec(
