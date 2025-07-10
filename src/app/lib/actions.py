@@ -1,8 +1,10 @@
+from datetime import datetime
 from uuid import UUID
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
+from sqlalchemy.exc import MultipleResultsFound, NoResultFound
 from sqlmodel import Session, select
 
 from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
@@ -14,13 +16,17 @@ from app.lib.constants import (
     support_openai_models,
 )
 from app.lib.db.database import engine
-from app.lib.db.models import AgentMcpModel, AgentModel, MCPModel
+from app.lib.db.models import AgentMcpModel, AgentModel, MCPModel, SessionModel
+from app.lib.usage_utils import check_allowed_model
 
 settings = get_settings()
 
 
-@cached_function(ttl=3600)  # Cache for 1 hour
-def get_right_model(llm: str) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
+@cached_function()
+def get_right_model(
+    *, llm: str, user_id: str
+) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
+    check_allowed_model(llm=llm, user_id=user_id)
     if llm not in support_models:
         raise Exception("This model is not supported")
     if llm in support_openai_models:
@@ -28,7 +34,7 @@ def get_right_model(llm: str) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
             api_key=SecretStr(settings.azure_api_key),
             azure_endpoint=settings.azure_endpoint,
             api_version="2025-01-01-preview",
-            azure_deployment="gpt-4.1-mini",
+            azure_deployment=llm,
             temperature=0.1,
         )
     elif llm in support_google_models:
@@ -40,7 +46,7 @@ def get_right_model(llm: str) -> AzureChatOpenAI | ChatGoogleGenerativeAI:
     return model
 
 
-@async_cached_function(ttl=1800)  # Cache for 30 minutes
+@async_cached_function()
 async def generate_tools(*, agent_id: str, user_id: str):
     """
     Retrieve agent data and associated tools for a given agent and user.
@@ -72,7 +78,7 @@ async def generate_tools(*, agent_id: str, user_id: str):
         return tools
 
 
-@async_cached_function(ttl=3600)  # Cache for 1 hour
+@async_cached_function()
 async def get_agent(agent_id: str) -> AgentModel:
     with Session(engine) as session:
         agent_data = session.exec(
@@ -82,3 +88,19 @@ async def get_agent(agent_id: str) -> AgentModel:
         if not agent_data:
             raise ValueError(f"Agent with id {agent_id} not found")
         return agent_data
+
+
+@async_cached_function()
+async def verify_token(token: str):
+    with Session(engine) as session:
+        statement = select(SessionModel).where(SessionModel.token == token)
+        try:
+            session_from_db = session.exec(statement).one()
+        except (NoResultFound, MultipleResultsFound) as e:
+            raise Exception(f"Invalid session {e}")
+
+        now = datetime.now()
+        if now > session_from_db.expires_at:
+            raise Exception("Expired session")
+
+        return session_from_db

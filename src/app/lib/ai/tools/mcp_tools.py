@@ -1,18 +1,24 @@
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from app.lib.db.models import MCPModel, AccountModel
-from sqlmodel import Session, select
-from app.lib.db.database import engine
-from app.lib.config import get_settings
-from fastapi import HTTPException
-from app.lib.db.queries import get_current_timestamp
 from datetime import timezone
+
+from fastapi import HTTPException
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from sqlmodel import Session, select
+
+from app.lib.caching_utils import async_cached_function
+from app.lib.config import get_settings
+from app.lib.db.database import engine
+from app.lib.db.models import AccountModel, MCPModel
+from app.lib.db.queries import get_current_timestamp
+from app.lib.usage_utils import check_allowed_mcps
 
 settings = get_settings()
 
 
+@async_cached_function()
 async def get_tools_from_mcps(mcps: list[MCPModel], user_id: str):
     server_params = {}
     for mcp in mcps:
+        check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
         params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
         if mcp.provider_id is not None:
             with Session(engine) as session:

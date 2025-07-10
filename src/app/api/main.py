@@ -18,6 +18,7 @@ from app.api.dependencies import (
     get_checkpointer,
     get_sqlmodel_session,
     set_checkpointer,
+    verify_session_token,
 )
 from app.lib.ai.tools.mcp_tools import get_tools_from_mcps
 from app.lib.ai.workflows.agent_workflow import agent_workflow
@@ -38,9 +39,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-origins = ["http://localhost:3000"]
-
 settings = get_settings()
+
+origins = [settings.frontend_app_url]
 logging.warning(f"Current settings: {settings.model_dump()}")
 
 
@@ -103,7 +104,11 @@ class GetToolsRequest(BaseModel):
 
 
 @app.post("/get_tools")
-async def get_tools(request: GetToolsRequest, session=Depends(get_sqlmodel_session)):
+async def get_tools(
+    request: GetToolsRequest,
+    session=Depends(get_sqlmodel_session),
+    _=Depends(verify_session_token),
+):
     """Get tools from MCPs."""
     try:
         # Retrieve MCPs by IDs
@@ -127,7 +132,9 @@ def health():
 
 @app.delete("/checkpointer/{thread_id}")
 async def delete_checkpointer(
-    thread_id: str, checkpointer: AsyncPostgresSaver = Depends(get_checkpointer)
+    thread_id: str,
+    checkpointer: AsyncPostgresSaver = Depends(get_checkpointer),
+    _=Depends(verify_session_token),
 ):
     """Delete a checkpointer thread."""
     try:

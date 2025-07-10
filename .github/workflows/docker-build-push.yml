@@ -33,4 +33,14 @@ jobs:
               GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}" \
               AZURE_API_KEY="${{ secrets.AZURE_API_KEY }}" \
-              AZURE_ENDPOINT="${{ secrets.AZURE_ENDPOINT }}"
+              AZURE_ENDPOINT="${{ secrets.AZURE_ENDPOINT }}" \
+              FRONTEND_APP_URL="${{ secrets.FRONTEND_APP_URL }}" \
+              BASIC_MODELS_PASSPORT="${{ secrets.BASIC_MODELS_PASSPORT }}" \
+              PRO_MODELS_PASSPORT="${{ secrets.PRO_MODELS_PASSPORT }}" \
+              ENTERPRISE_MODELS_PASSPORT="${{ secrets.ENTERPRISE_MODELS_PASSPORT }}" \
+              SUPPORT_OPENAI_MODELS="${{ secrets.SUPPORT_OPENAI_MODELS }}" \
+              SUPPORT_GOOGLE_MODELS="${{ secrets.SUPPORT_GOOGLE_MODELS }}" \
+              DEFAULT_MODEL="${{ secrets.DEFAULT_MODEL }}" \
+              BASIC_MCPS_PASSPORT="${{ secrets.BASIC_MCPS_PASSPORT }}" \
+              PRO_MCPS_PASSPORT="${{ secrets.PRO_MCPS_PASSPORT }}" \
+              ENTERPRISE_MCPS_PASSPORT="${{ secrets.ENTERPRISE_MCPS_PASSPORT }}"

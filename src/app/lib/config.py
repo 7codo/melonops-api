@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import List, Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -10,6 +11,18 @@ class Settings(BaseSettings):
     google_client_secret: str
     azure_api_key: str
     azure_endpoint: str
+    frontend_app_url: str
+
+    # constants
+    enterprise_models_passport: List[str]
+    support_openai_models: List[str]
+    support_google_models: List[str]
+    default_model: str
+    basic_mcps_passport: List[str]
+    pro_mcps_passport: List[str]
+    enterprise_mcps_passport: List[str]
+    basic_models_passport: List[str]
+    pro_models_passport: List[str]
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"

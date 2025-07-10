@@ -1,9 +1,25 @@
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID, uuid4
-from datetime import datetime
-from sqlmodel import SQLModel, Field
-from sqlalchemy import Column, String
+
+from sqlalchemy import BigInteger, String
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlmodel import Column, Field, ForeignKey, SQLModel
+
+
+class SessionModel(SQLModel, table=True):
+    __tablename__: str = "session"
+
+    id: str = Field(primary_key=True, nullable=False)
+    expires_at: datetime = Field(nullable=False)
+    token: str = Field(nullable=False, unique=True)
+    created_at: datetime = Field(nullable=False)
+    updated_at: datetime = Field(nullable=False)
+    ip_address: Optional[str] = Field(default=None)
+    user_agent: Optional[str] = Field(default=None)
+    user_id: str = Field(
+        sa_column=Column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    )
 
 
 class MCPModel(SQLModel, table=True):
@@ -74,3 +90,43 @@ class TaskModel(SQLModel, table=True):
     title: str = Field(nullable=False)
     user_id: str = Field(foreign_key="user.id", nullable=False)
     agent_id: UUID = Field(foreign_key="agent.id", nullable=False)
+
+
+class PlanModel(SQLModel, table=True):
+    __tablename__: str = "plan"
+
+    id: int = Field(primary_key=True, nullable=False)
+    productId: int = Field(nullable=False)
+    productName: Optional[str] = Field(default=None)
+    variantId: int = Field(nullable=False, unique=True)
+    name: str = Field(nullable=False)
+    description: Optional[str] = Field(default=None)
+    price: str = Field(nullable=False)
+    isUsageBased: bool = Field(default=False)
+    interval: Optional[str] = Field(default=None)
+    intervalCount: Optional[int] = Field(default=None)
+    trialInterval: Optional[str] = Field(default=None)
+    trialIntervalCount: Optional[int] = Field(default=None)
+    sort: Optional[int] = Field(default=None)
+
+
+class SubscriptionModel(SQLModel, table=True):
+    __tablename__: str = "subscription"
+
+    id: int = Field(primary_key=True, nullable=False)
+    lemonSqueezyId: str = Field(unique=True, nullable=False)
+    orderId: int = Field(nullable=False)
+    name: str = Field(nullable=False)
+    email: str = Field(nullable=False)
+    status: str = Field(nullable=False)
+    statusFormatted: str = Field(nullable=False)
+    renewsAt: Optional[str] = Field(default=None)
+    usage: int = Field(default=0, sa_column=Column(BigInteger()))
+    endsAt: Optional[str] = Field(default=None)
+    trialEndsAt: Optional[str] = Field(default=None)
+    price: str = Field(nullable=False)
+    isUsageBased: bool = Field(default=False)
+    isPaused: bool = Field(default=False)
+    subscriptionItemId: int = Field(nullable=False)
+    userId: str = Field(foreign_key="user.id", nullable=False)
+    planId: int = Field(foreign_key="plan.id", nullable=False)
