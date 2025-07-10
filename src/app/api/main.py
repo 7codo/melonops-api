@@ -10,6 +10,8 @@ from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
 from copilotkit.integrations.fastapi import add_fastapi_endpoint
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from langfuse import Langfuse, get_client
+from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import BaseModel
 from sqlmodel import select
@@ -47,6 +49,16 @@ logging.warning(f"Current settings: {settings.model_dump()}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host,
+    )
+    langfuse = get_client()
+    if langfuse.auth_check():
+        logger.info("Langfuse client is authenticated and ready!")
+    else:
+        logger.info("Authentication failed. Please check your credentials and host.")
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
@@ -56,9 +68,13 @@ async def lifespan(app: FastAPI):
 
         # Set the checkpointer instance globally
         set_checkpointer(checkpointer)
-
-        chat_graph = chat_workflow.compile(checkpointer=checkpointer)
-        agent_graph = agent_workflow.compile(checkpointer=checkpointer)
+        langfuse_handler = CallbackHandler()
+        chat_graph = chat_workflow.compile(checkpointer=checkpointer).with_config(
+            {"callbacks": [langfuse_handler]}
+        )
+        agent_graph = agent_workflow.compile(checkpointer=checkpointer).with_config(
+            {"callbacks": [langfuse_handler]}
+        )
 
         logger.info("Workflows compiled successfully")
 
@@ -83,6 +99,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database and tables created successfully")
         logger.info("Application startup completed successfully")
         yield
+        langfuse.shutdown()
         logger.info("Shutting down application...")
 
 

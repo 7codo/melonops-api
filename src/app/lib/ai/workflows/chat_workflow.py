@@ -2,8 +2,10 @@ import logging
 import sys
 
 from copilotkit import CopilotKitState
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langfuse import get_client, observe
+from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
@@ -34,14 +36,46 @@ class OverallState(InputState, OutputState):
     llm: str | None
     user_id: str | None
     auth_token: str | None
+    session_id: str | None
+    agent_id: str | None
+
+
+@observe()
+async def process_query(
+    *,
+    messages: list[AnyMessage],
+    user_id: str,
+    session_id: str,
+    llm: str,
+    agent_id: str,
+):
+    langfuse = get_client()
+
+    langfuse.update_current_trace(
+        name="chat_workflow",
+        session_id=session_id,
+        user_id=user_id,
+        tags=[agent_id],
+        input={"messages": messages},
+    )
+
+    langfuse_handler = CallbackHandler()
+    model = get_right_model(llm=llm, user_id=user_id)
+
+    response = await model.ainvoke(messages, config={"callbacks": [langfuse_handler]})
+    langfuse.update_current_trace(output={"response": [response]})
+
+    return response
 
 
 async def chat_node(state: OverallState, config: RunnableConfig):
     configurable = config.get("configurable", {})
+
     llm = configurable.get("llm", None)
     agent_id = configurable.get("agent_id", None)
     user_id = configurable.get("user_id", None)
     auth_token = configurable.get("auth_token", None)
+    session_id = configurable.get("session_id", None)
 
     auth_token_state = state.get("auth_token")
     if auth_token is not None and auth_token_state is None:
@@ -63,24 +97,41 @@ async def chat_node(state: OverallState, config: RunnableConfig):
         messages = [SystemMessage(content=system_prompt_state)] + messages
     llm_state = state.get("llm")
     user_id_state = state.get("user_id")
+    session_id_state = state.get("session_id")
+    agent_id_state = state.get("agent_id")
     if llm is not None and llm_state is None:
         llm_state = llm
     if user_id is not None and user_id_state is None:
         user_id_state = user_id
+    if session_id is not None and session_id_state is None:
+        session_id_state = session_id
+    if agent_id is not None and agent_id_state is None:
+        agent_id_state = agent_id
 
     if llm_state is None:
         raise ValueError("LLM value is required!")
     if user_id_state is None:
         raise ValueError("user_id value is required!")
+    if session_id_state is None:
+        raise ValueError("session_id value is required!")
+    if agent_id_state is None:
+        raise ValueError("agent_id value is required!")
 
-    model = get_right_model(llm=llm_state, user_id=user_id_state)
-    response = await model.ainvoke(messages)
+    response = await process_query(
+        messages=messages,
+        user_id=user_id_state,
+        session_id=session_id_state,
+        llm=llm_state,
+        agent_id=agent_id_state,
+    )
     return {
         "messages": [response],
         "system_message": system_prompt_state,
         "llm": llm_state,
         "user_id": user_id_state,
         "auth_token": auth_token_state,
+        "session_id": session_id_state,
+        "agent_id": agent_id_state,
     }
 
 

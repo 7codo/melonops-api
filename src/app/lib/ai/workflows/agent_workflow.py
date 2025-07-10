@@ -3,6 +3,8 @@ import sys
 
 from copilotkit import CopilotKitState
 from langchain_core.runnables import RunnableConfig
+from langfuse import get_client, observe
+from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
 
@@ -34,6 +36,44 @@ class OverallState(InputState, OutputState):
     name: str | None
     system_prompt: str | None
     auth_token: str | None
+    session_id: str | None
+
+
+@observe()
+async def process_agent_query(
+    *,
+    messages,
+    user_id,
+    session_id,
+    llm,
+    agent_id,
+    name,
+    system_prompt,
+):
+    langfuse = get_client()
+    langfuse.update_current_trace(
+        name="agent_workflow",
+        session_id=session_id,
+        user_id=user_id,
+        tags=[agent_id],
+        input={"messages": messages},
+    )
+    langfuse_handler = CallbackHandler()
+    model = get_right_model(llm=llm, user_id=user_id)
+    tools = await generate_tools(agent_id=agent_id, user_id=user_id)
+    sanitized_name = name.replace(" ", "_") if name else "agent"
+    agent = create_react_agent(
+        model,
+        tools=tools,
+        name=sanitized_name,
+        prompt=system_prompt,
+    )
+    response = await agent.ainvoke(
+        {"messages": messages},
+        config={"callbacks": [langfuse_handler]},
+    )
+    langfuse.update_current_trace(output={"response": response["messages"]})
+    return response["messages"]
 
 
 async def agent_node(state: OverallState, config: RunnableConfig):
@@ -41,40 +81,38 @@ async def agent_node(state: OverallState, config: RunnableConfig):
     llm = configurable.get("llm", None)
     user_id = configurable.get("user_id", None)
     agent_id = configurable.get("agent_id", None)
-
+    session_id = configurable.get("session_id", None)
     auth_token = configurable.get("auth_token", None)
 
     auth_token_state = state.get("auth_token")
     if auth_token is not None and auth_token_state is None:
         auth_token_state = auth_token
-
     if auth_token_state is None:
         raise ValueError("auth_token value is required!")
-
     await verify_token(auth_token_state)
 
     agent_id_state = state.get("agent_id")
-    if agent_id_state is None and agent_id is not None:
+    if agent_id is not None and agent_id_state is None:
         agent_id_state = agent_id
-
     if agent_id_state is None:
         raise ValueError("Agent ID is required!")
 
     user_id_state = state.get("user_id")
-    if user_id_state is None and user_id is not None:
+    if user_id is not None and user_id_state is None:
         user_id_state = user_id
-
+    session_id_state = state.get("session_id")
+    if session_id is not None and session_id_state is None:
+        session_id_state = session_id
     if user_id_state is None:
         raise ValueError("User ID is required!")
+    if session_id_state is None:
+        raise ValueError("session_id value is required!")
 
     llm_state = state.get("llm")
     if llm is not None and llm_state is None:
         llm_state = llm
-
     if llm_state is None:
         raise ValueError("LLM value is required!")
-
-    model = get_right_model(llm=llm_state, user_id=user_id_state)
 
     name_state = state.get("name")
     system_prompt_state = state.get("system_prompt")
@@ -83,26 +121,27 @@ async def agent_node(state: OverallState, config: RunnableConfig):
         system_prompt_state = agent_data.system_prompt
         name_state = agent_data.name
 
-    tools = await generate_tools(agent_id=agent_id_state, user_id=user_id_state)
+    messages = state["messages"]
 
-    sanitized_name = name_state.replace(" ", "_") if name_state else "agent"
-
-    agent = create_react_agent(
-        model,
-        tools=tools,
-        name=sanitized_name,
-        prompt=system_prompt_state,
+    response_messages = await process_agent_query(
+        messages=messages,
+        user_id=user_id_state,
+        session_id=session_id_state,
+        llm=llm_state,
+        agent_id=agent_id_state,
+        name=name_state,
+        system_prompt=system_prompt_state,
     )
-    response = await agent.ainvoke({"messages": state["messages"]}, config)
 
     return {
-        "messages": response["messages"],
-        "user_id": user_id,
-        "agent_id": agent_id,
+        "messages": response_messages,
+        "user_id": user_id_state,
+        "agent_id": agent_id_state,
         "llm": llm_state,
         "name": name_state,
         "system_prompt": system_prompt_state,
         "auth_token": auth_token_state,
+        "session_id": session_id_state,
     }
 
 

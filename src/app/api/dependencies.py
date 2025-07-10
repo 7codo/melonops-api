@@ -12,6 +12,9 @@ from app.lib.db.models import SessionModel
 # Global variable to store the checkpointer instance
 _checkpointer: Optional[AsyncPostgresSaver] = None
 
+# Global variable to store the langfuse client instance
+_langfuse_client = None
+
 
 def set_checkpointer(checkpointer: AsyncPostgresSaver):
     """Set the global checkpointer instance."""

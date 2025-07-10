@@ -44,3 +44,6 @@ jobs:
               BASIC_MCPS_PASSPORT="${{ secrets.BASIC_MCPS_PASSPORT }}" \
               PRO_MCPS_PASSPORT="${{ secrets.PRO_MCPS_PASSPORT }}" \
               ENTERPRISE_MCPS_PASSPORT="${{ secrets.ENTERPRISE_MCPS_PASSPORT }}"
+              LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}"
+              LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}"
+              LANGFUSE_HOST="${{ secrets.LANGFUSE_HOST }}"

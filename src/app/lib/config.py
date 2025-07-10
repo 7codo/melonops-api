@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     enterprise_mcps_passport: List[str]
     basic_models_passport: List[str]
     pro_models_passport: List[str]
+    langfuse_public_key: str
+    langfuse_secret_key: str
+    langfuse_host: str
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"

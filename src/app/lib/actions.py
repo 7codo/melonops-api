@@ -35,6 +35,7 @@ def get_right_model(
             azure_endpoint=settings.azure_endpoint,
             api_version="2025-01-01-preview",
             azure_deployment=llm,
+            name=llm,
             temperature=0.1,
         )
     elif llm in support_google_models:
