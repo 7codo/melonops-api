@@ -19,14 +19,14 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           appSourcePath: .
-          acrName: melonopsmainregistry
-          containerAppName: melonops-backend
-          resourceGroup: melonops
+          acrName: advocatorregistry
+          containerAppName: advocator-backend
+          resourceGroup: advocator
       - name: Apply missing env vars via CLI
         run: |
           az containerapp update \
-            --name melonops-backend \
-            --resource-group melonops \
+            --name advocator-backend \
+            --resource-group advocator \
             --set-env-vars \
               DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
