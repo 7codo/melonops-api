@@ -4,17 +4,17 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from typing import List
+from uuid import UUID
 
 import uvicorn
 from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
 from copilotkit.integrations.fastapi import add_fastapi_endpoint
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langfuse import Langfuse, get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import BaseModel
-from sqlmodel import select
 
 from app.api.dependencies import (
     get_checkpointer,
@@ -27,7 +27,7 @@ from app.lib.ai.workflows.agent_workflow import agent_workflow
 from app.lib.ai.workflows.chat_workflow import chat_workflow
 from app.lib.config import get_settings
 from app.lib.db.database import create_db_and_tables
-from app.lib.db.models import MCPModel
+from app.lib.utils import extract_usage_from_traces
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -116,7 +116,7 @@ app.add_middleware(
 
 
 class GetToolsRequest(BaseModel):
-    mcps_ids: List[str]
+    mcps_ids: List[UUID]
     user_id: str
 
 
@@ -128,16 +128,11 @@ async def get_tools(
 ):
     """Get tools from MCPs."""
     try:
-        # Retrieve MCPs by IDs
-        statement = select(MCPModel).where(MCPModel.id.in_(request.mcps_ids))  # type: ignore
-        mcps = list(session.exec(statement).all())
-        tools = await get_tools_from_mcps(mcps, request.user_id)
+        tools = await get_tools_from_mcps(request.mcps_ids, request.user_id)
         return [{"name": tool.name, "description": tool.description} for tool in tools]
-    except HTTPException as e:
-        raise e
     except Exception as e:
-        logger.error(f"Error getting tools: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Error in get_tools: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get tools: {str(e)}")
 
 
 @app.get("/health")
@@ -147,22 +142,63 @@ def health():
     return {"status": "ok"}
 
 
-@app.delete("/checkpointer/{thread_id}")
+class DeleteThreadsRequest(BaseModel):
+    thread_ids: List[str]
+
+
+@app.delete("/checkpointer/delete_threads")
 async def delete_checkpointer(
-    thread_id: str,
+    request: DeleteThreadsRequest = Body(...),
     checkpointer: AsyncPostgresSaver = Depends(get_checkpointer),
     _=Depends(verify_session_token),
 ):
-    """Delete a checkpointer thread."""
+    """Delete one or more checkpointer threads."""
+    results = {"deleted": [], "failed": []}
+    for thread_id in request.thread_ids:
+        try:
+            await checkpointer.adelete_thread(thread_id)
+            logger.info(f"Successfully deleted checkpointer thread: {thread_id}")
+            results["deleted"].append(thread_id)
+        except Exception as e:
+            logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
+            results["failed"].append({"thread_id": thread_id, "error": str(e)})
+    return results
+
+
+# @app.delete("/checkpointer/{thread_id}")
+# async def delete_checkpointer(
+#     thread_id: str,
+#     checkpointer: AsyncPostgresSaver = Depends(get_checkpointer),
+#     _=Depends(verify_session_token),
+# ):
+#     """[DEPRECATED] Use /checkpointer/delete_threads instead. Delete a checkpointer thread by ID."""
+#     try:
+#         await checkpointer.adelete_thread(thread_id)
+#         logger.info(f"Successfully deleted checkpointer thread: {thread_id}")
+#         return {"message": f"Checkpointer thread {thread_id} deleted successfully"}
+#     except Exception as e:
+#         logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to delete checkpointer thread: {str(e)}"
+#         )
+
+
+class TokenUsageResponse(BaseModel):
+    user_id: str
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+
+
+@app.get("/token-usage")
+async def get_token_usage(user_id: str):
+    client = get_client()
     try:
-        await checkpointer.adelete_thread(thread_id)
-        logger.info(f"Successfully deleted checkpointer thread: {thread_id}")
-        return {"message": f"Checkpointer thread {thread_id} deleted successfully"}
+        traces = client.api.trace.list(user_id=user_id)
+        return extract_usage_from_traces(traces)
+
     except Exception as e:
-        logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to delete checkpointer thread: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # For dev env

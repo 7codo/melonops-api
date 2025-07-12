@@ -1,4 +1,5 @@
 from datetime import timezone
+from uuid import UUID
 
 from fastapi import HTTPException
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -15,61 +16,66 @@ settings = get_settings()
 
 
 @async_cached_function()
-async def get_tools_from_mcps(mcps: list[MCPModel], user_id: str):
-    server_params = {}
-    for mcp in mcps:
-        check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
-        params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
-        if mcp.provider_id is not None:
-            with Session(engine) as session:
-                statement = select(AccountModel).where(
-                    AccountModel.provider_id == mcp.provider_id,
-                    AccountModel.user_id == user_id,
-                )
-                account = session.exec(statement).first()
+async def get_tools_from_mcps(mcp_ids: list[UUID], user_id: str):
+    with Session(engine) as session:
+        statement = select(MCPModel).where(MCPModel.id.in_(mcp_ids))  # type: ignore
+        mcps = list(session.exec(statement).all())
+        server_params = {}
+        for mcp in mcps:
+            check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
+            params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
+            if mcp.provider_id is not None:
+                with Session(engine) as session:
+                    statement = select(AccountModel).where(
+                        AccountModel.provider_id == mcp.provider_id,
+                        AccountModel.user_id == user_id,
+                    )
+                    account = session.exec(statement).first()
 
-                if not account:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"No account found for provider_id {mcp.provider_id}",
-                    )
-                if account.scope is None:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Account scopes required",
-                    )
-                account_scopes = set(account.scope.split(","))
-                mcp_scopes = set(mcp.scopes)
-                if not mcp_scopes.issubset(account_scopes):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Account scopes do not match MCP scopes for provider_id {mcp.provider_id}",
-                    )
-                if mcp.provider_id == "google":
-                    now = get_current_timestamp()
-                    if (
-                        account.access_token_expires_at
-                        and account.access_token_expires_at.replace(tzinfo=timezone.utc)
-                        < now
-                    ):
+                    if not account:
                         raise HTTPException(
                             status_code=400,
-                            detail=f"Access token for provider_id {mcp.provider_id} has expired",
+                            detail=f"No account found for provider_id {mcp.provider_id}",
                         )
-                    params["headers"] = {
-                        "X-ACCESS-TOKEN": account.access_token,
-                        "X-REFRESH-TOKEN": account.refresh_token,
-                        "X-SCOPES": account.scope,
-                        "X-ACCESS-TOKEN-EXPIRES-AT": str(
+                    if account.scope is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Account scopes required",
+                        )
+                    account_scopes = set(account.scope.split(","))
+                    mcp_scopes = set(mcp.scopes)
+                    if not mcp_scopes.issubset(account_scopes):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Account scopes do not match MCP scopes for provider_id {mcp.provider_id}",
+                        )
+                    if mcp.provider_id == "google":
+                        now = get_current_timestamp()
+                        if (
                             account.access_token_expires_at
-                        )
-                        if account.access_token_expires_at
-                        else None,
-                        "X-CLIENT-ID": settings.google_client_id,
-                        "X-CLIENT-SECRET": settings.google_client_secret,
-                    }
-        server_params[mcp.name] = params
+                            and account.access_token_expires_at.replace(
+                                tzinfo=timezone.utc
+                            )
+                            < now
+                        ):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Access token for provider_id {mcp.provider_id} has expired",
+                            )
+                        params["headers"] = {
+                            "X-ACCESS-TOKEN": account.access_token,
+                            "X-REFRESH-TOKEN": account.refresh_token,
+                            "X-SCOPES": account.scope,
+                            "X-ACCESS-TOKEN-EXPIRES-AT": str(
+                                account.access_token_expires_at
+                            )
+                            if account.access_token_expires_at
+                            else None,
+                            "X-CLIENT-ID": settings.google_client_id,
+                            "X-CLIENT-SECRET": settings.google_client_secret,
+                        }
+            server_params[mcp.name] = params
 
-    client = MultiServerMCPClient(server_params)
-    tools = await client.get_tools()
-    return tools
+        client = MultiServerMCPClient(server_params)
+        tools = await client.get_tools()
+        return tools

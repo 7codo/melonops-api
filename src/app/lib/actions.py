@@ -16,7 +16,7 @@ from app.lib.constants import (
     support_openai_models,
 )
 from app.lib.db.database import engine
-from app.lib.db.models import AgentMcpModel, AgentModel, MCPModel, SessionModel
+from app.lib.db.models import AgentMcpModel, AgentModel, SessionModel
 from app.lib.usage_utils import check_allowed_model
 
 settings = get_settings()
@@ -48,7 +48,7 @@ def get_right_model(
 
 
 @async_cached_function()
-async def generate_tools(*, agent_id: str, user_id: str):
+async def generate_tools(*, agent_id: str, user_id: str, tools_ids: list[str]):
     """
     Retrieve agent data and associated tools for a given agent and user.
 
@@ -70,10 +70,13 @@ async def generate_tools(*, agent_id: str, user_id: str):
 
         tools = []
         if mcp_ids:
-            statement = select(MCPModel).where(MCPModel.id.in_(mcp_ids))  # type: ignore
-            mcps = list(session.exec(statement).all())
             # Generate tools from MCPs
-            tools = await get_tools_from_mcps(mcps, user_id)
+            all_tools = await get_tools_from_mcps(mcp_ids, user_id)
+            # Filter tools based on tools_ids if provided
+            if tools_ids and len(tools_ids) > 0:
+                tools = [tool for tool in all_tools if tool.id in tools_ids]
+            else:
+                tools = all_tools
 
         # Prepare enhanced agent data dictionary
         return tools

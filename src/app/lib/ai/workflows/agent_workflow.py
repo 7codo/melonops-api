@@ -37,18 +37,12 @@ class OverallState(InputState, OutputState):
     system_prompt: str | None
     auth_token: str | None
     session_id: str | None
+    tools_ids: list[str] | None
 
 
 @observe()
 async def process_agent_query(
-    *,
-    messages,
-    user_id,
-    session_id,
-    llm,
-    agent_id,
-    name,
-    system_prompt,
+    *, messages, user_id, session_id, llm, agent_id, name, system_prompt, tools_ids
 ):
     langfuse = get_client()
     langfuse.update_current_trace(
@@ -60,7 +54,9 @@ async def process_agent_query(
     )
     langfuse_handler = CallbackHandler()
     model = get_right_model(llm=llm, user_id=user_id)
-    tools = await generate_tools(agent_id=agent_id, user_id=user_id)
+    tools = await generate_tools(
+        agent_id=agent_id, user_id=user_id, tools_ids=tools_ids
+    )
     sanitized_name = name.replace(" ", "_") if name else "agent"
     agent = create_react_agent(
         model,
@@ -116,10 +112,12 @@ async def agent_node(state: OverallState, config: RunnableConfig):
 
     name_state = state.get("name")
     system_prompt_state = state.get("system_prompt")
-    if name_state is None or system_prompt_state is None:
+    tools_ids_state = state.get("tools_ids")
+    if name_state is None or system_prompt_state is None or tools_ids_state is None:
         agent_data = await get_agent(agent_id_state)
         system_prompt_state = agent_data.system_prompt
         name_state = agent_data.name
+        tools_ids_state = agent_data.tools_ids or []
 
     messages = state["messages"]
 
@@ -131,6 +129,7 @@ async def agent_node(state: OverallState, config: RunnableConfig):
         agent_id=agent_id_state,
         name=name_state,
         system_prompt=system_prompt_state,
+        tools_ids=tools_ids_state,
     )
 
     return {
@@ -142,6 +141,7 @@ async def agent_node(state: OverallState, config: RunnableConfig):
         "system_prompt": system_prompt_state,
         "auth_token": auth_token_state,
         "session_id": session_id_state,
+        "tools_ids_state": tools_ids_state,
     }
 
 
