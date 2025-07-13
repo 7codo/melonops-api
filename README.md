@@ -24,4 +24,8 @@ az role assignment create --assignee $principalId --role AcrPull --scope $acrId
 
 # Step 7: Link the ACR to the Container App using system-assigned identity
 
-## az containerapp registry set --name advocator-backend --resource-group advocator --server advocatorregistry.azurecr.io --identity system
+az containerapp registry set --name advocator-backend --resource-group advocator --server advocatorregistry.azurecr.io --identity system
+
+# create credentials
+
+az ad sp create-for-rbac --name "github-actions-deployer" --role contributor --scopes /subscriptions/d52146ae-f113-4eaa-807f-037c91531fe6/resourceGroups/melonops --sdk-auth

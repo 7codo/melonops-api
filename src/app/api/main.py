@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -41,7 +42,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
 settings = get_settings()
+print(json.dumps(settings.model_dump()))
 
 origins = [settings.frontend_app_url]
 logging.warning(f"Current settings: {settings.model_dump()}")
