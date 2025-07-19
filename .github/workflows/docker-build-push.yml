@@ -35,6 +35,6 @@ jobs:
               AZURE_API_KEY="${{ secrets.AZURE_API_KEY }}" \
               AZURE_ENDPOINT="${{ secrets.AZURE_ENDPOINT }}" \
               FRONTEND_APP_URL="${{ secrets.FRONTEND_APP_URL }}" \
-              LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}"
-              LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}"
+              LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
+              LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
               LANGFUSE_HOST="${{ secrets.LANGFUSE_HOST }}"
