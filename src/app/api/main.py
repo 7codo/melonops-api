@@ -198,7 +198,6 @@ def main():
         "app.api.main:app",
         host="localhost",
         port=port,
-        reload=True,
     )
 
 
