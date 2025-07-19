@@ -22,6 +22,8 @@ MANIFEST
 
 # Virtualenv
 .env
+.env*
+.env.production
 .venv
 env/
 venv/

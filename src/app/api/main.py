@@ -1,11 +1,9 @@
 import asyncio
-import json
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from typing import List
-from uuid import UUID
 
 import uvicorn
 from copilotkit import CopilotKitRemoteEndpoint, LangGraphAgent
@@ -19,7 +17,6 @@ from pydantic import BaseModel
 
 from app.api.dependencies import (
     get_checkpointer,
-    get_sqlmodel_session,
     set_checkpointer,
     verify_session_token,
 )
@@ -28,7 +25,6 @@ from app.lib.ai.workflows.agent_workflow import agent_workflow
 from app.lib.ai.workflows.chat_workflow import chat_workflow
 from app.lib.config import get_settings
 from app.lib.db.database import create_db_and_tables
-from app.lib.utils import extract_usage_from_traces
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -44,7 +40,6 @@ logger = logging.getLogger(__name__)
 
 
 settings = get_settings()
-print(json.dumps(settings.model_dump()))
 
 origins = [settings.frontend_app_url]
 logging.warning(f"Current settings: {settings.model_dump()}")
@@ -68,10 +63,10 @@ async def lifespan(app: FastAPI):
         logger.info("Setting up checkpointer...")
 
         await checkpointer.setup()
-
         # Set the checkpointer instance globally
         set_checkpointer(checkpointer)
         langfuse_handler = CallbackHandler()
+
         chat_graph = chat_workflow.compile(checkpointer=checkpointer).with_config(
             {"callbacks": [langfuse_handler]}
         )
@@ -102,7 +97,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database and tables created successfully")
         logger.info("Application startup completed successfully")
         yield
-        langfuse.shutdown()
+        # langfuse.shutdown()
         logger.info("Shutting down application...")
 
 
@@ -119,14 +114,13 @@ app.add_middleware(
 
 
 class GetToolsRequest(BaseModel):
-    mcps_ids: List[UUID]
+    mcps_ids: List[str]
     user_id: str
 
 
 @app.post("/get_tools")
 async def get_tools(
     request: GetToolsRequest,
-    session=Depends(get_sqlmodel_session),
     _=Depends(verify_session_token),
 ):
     """Get tools from MCPs."""
@@ -136,6 +130,31 @@ async def get_tools(
     except Exception as e:
         logger.error(f"Error in get_tools: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tools: {str(e)}")
+
+
+class GetLLMUsageRequest(BaseModel):
+    user_id: str
+    llm: str
+
+
+@app.post("/token_usage")
+async def get_llm_usage(
+    request: GetLLMUsageRequest,
+    _=Depends(verify_session_token),
+):
+    """Get LLM token usage for a user and model."""
+    try:
+        from app.lib.usage_utils import get_llm_usage_for_active_subscription_range
+
+        usage = get_llm_usage_for_active_subscription_range(
+            request.user_id, request.llm
+        )
+        return usage
+    except Exception as e:
+        logger.error(f"Error in get_llm_usage: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get LLM usage: {str(e)}"
+        )
 
 
 @app.get("/health")
@@ -166,42 +185,6 @@ async def delete_checkpointer(
             logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
             results["failed"].append({"thread_id": thread_id, "error": str(e)})
     return results
-
-
-# @app.delete("/checkpointer/{thread_id}")
-# async def delete_checkpointer(
-#     thread_id: str,
-#     checkpointer: AsyncPostgresSaver = Depends(get_checkpointer),
-#     _=Depends(verify_session_token),
-# ):
-#     """[DEPRECATED] Use /checkpointer/delete_threads instead. Delete a checkpointer thread by ID."""
-#     try:
-#         await checkpointer.adelete_thread(thread_id)
-#         logger.info(f"Successfully deleted checkpointer thread: {thread_id}")
-#         return {"message": f"Checkpointer thread {thread_id} deleted successfully"}
-#     except Exception as e:
-#         logger.error(f"Error deleting checkpointer thread {thread_id}: {e}")
-#         raise HTTPException(
-#             status_code=500, detail=f"Failed to delete checkpointer thread: {str(e)}"
-#         )
-
-
-class TokenUsageResponse(BaseModel):
-    user_id: str
-    total_input_tokens: int
-    total_output_tokens: int
-    total_tokens: int
-
-
-@app.get("/token-usage")
-async def get_token_usage(user_id: str):
-    client = get_client()
-    try:
-        traces = client.api.trace.list(user_id=user_id)
-        return extract_usage_from_traces(traces)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # For dev env

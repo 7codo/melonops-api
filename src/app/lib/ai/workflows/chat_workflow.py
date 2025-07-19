@@ -1,22 +1,13 @@
 import logging
-import sys
 
 from copilotkit import CopilotKitState
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langfuse import get_client, observe
-from langfuse.langchain import CallbackHandler
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from app.lib.actions import get_agent, get_right_model, verify_token
 from app.lib.config import get_settings
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+from app.lib.usage_utils import check_llm_token_limit, check_usage_limit
 
 logger = logging.getLogger(__name__)
 
@@ -28,141 +19,154 @@ class InputState(CopilotKitState):
 
 
 class OutputState(CopilotKitState):
-    pass
+    llm: str | None
+    error: str | None
 
 
 class OverallState(InputState, OutputState):
     system_message: str | None
-    llm: str | None
-    user_id: str | None
     auth_token: str | None
-    session_id: str | None
     agent_id: str | None
+    session_id: str | None
+    user_id: str | None
 
 
-@observe()
-async def process_query(
-    *,
-    messages: list[AnyMessage],
-    user_id: str,
-    session_id: str,
-    llm: str,
-    agent_id: str,
-):
-    langfuse = get_client()
+async def verification_node(state: OverallState, config: RunnableConfig):
+    messages = state.get("messages", [])
+    system_prompt_state = state.get("system_message", None)
+    llm_state = state.get("llm", None)
+    user_id_state = state.get("user_id", None)
+    auth_token_state = state.get("auth_token", None)
+    session_id_state = state.get("session_id", None)
+    agent_id_state = state.get("agent_id", None)
+    try:
+        configurable = config.get("configurable", {})
 
-    langfuse.update_current_trace(
-        name="chat_workflow",
-        session_id=session_id,
-        user_id=user_id,
-        tags=[agent_id],
-        input={"messages": messages},
-    )
+        llm = configurable.get("llm", None)
+        agent_id = configurable.get("agent_id", None)
+        user_id = configurable.get("user_id", None)
+        auth_token = configurable.get("auth_token", None)
+        session_id = configurable.get("session_id", None)
 
-    langfuse_handler = CallbackHandler()
-    model = get_right_model(llm=llm, user_id=user_id)
+        if auth_token is not None and auth_token_state is None:
+            auth_token_state = auth_token
 
-    response = await model.ainvoke(messages, config={"callbacks": [langfuse_handler]})
-    langfuse.update_current_trace(output={"response": [response]})
+        if auth_token_state is None:
+            raise ValueError("auth_token value is required!")
 
-    return response
+        await verify_token(auth_token_state)
+
+        if llm is not None and llm_state is None:
+            llm_state = llm
+        if user_id is not None and user_id_state is None:
+            user_id_state = user_id
+
+        if llm_state is None:
+            raise ValueError("LLM value is required!")
+        if user_id_state is None:
+            raise ValueError("user_id value is required!")
+
+        check_llm_token_limit(user_id=user_id_state, llm=llm_state)
+        check_usage_limit(user_id=user_id_state)
+
+        if system_prompt_state is None and agent_id is not None:
+            agent = await get_agent(agent_id)
+            if agent.name is not None and agent.name != "Untitled Agent":
+                system_prompt_state = (
+                    f"Your name is {agent.name}, {agent.system_prompt}"
+                )
+            else:
+                system_prompt_state = agent.system_prompt
+
+        if session_id is not None and session_id_state is None:
+            session_id_state = session_id
+        if agent_id is not None and agent_id_state is None:
+            agent_id_state = agent_id
+
+        if session_id_state is None:
+            raise ValueError("session_id value is required!")
+        if agent_id_state is None:
+            raise ValueError("agent_id value is required!")
+
+        return {
+            "error": None,
+            "messages": messages,
+            "system_message": system_prompt_state,
+            "llm": llm_state,
+            "user_id": user_id_state,
+            "auth_token": auth_token_state,
+            "session_id": session_id_state,
+            "agent_id": agent_id_state,
+        }
+    except Exception as e:
+        logger.error(f"Error in verification_node: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "messages": messages,
+            "system_message": system_prompt_state,
+            "llm": llm_state,
+            "user_id": user_id_state,
+            "auth_token": auth_token_state,
+            "session_id": session_id_state,
+            "agent_id": agent_id_state,
+        }
 
 
 async def chat_node(state: OverallState, config: RunnableConfig):
-    configurable = config.get("configurable", {})
+    messages = state.get("messages", [])
+    system_prompt_state = state.get("system_message", None)
+    llm_state = state.get("llm", None)
+    user_id_state = state.get("user_id", None)
+    auth_token_state = state.get("auth_token", None)
+    session_id_state = state.get("session_id", None)
+    agent_id_state = state.get("agent_id", None)
+    try:
+        model = get_right_model(llm=llm_state, user_id=user_id_state)
+        if system_prompt_state and not isinstance(messages[0], SystemMessage):
+            updated_messages = [SystemMessage(content=system_prompt_state), *messages]
+            messages = updated_messages
 
-    llm = configurable.get("llm", None)
-    agent_id = configurable.get("agent_id", None)
-    user_id = configurable.get("user_id", None)
-    auth_token = configurable.get("auth_token", None)
-    session_id = configurable.get("session_id", None)
+        response = await model.ainvoke(messages, config)
 
-    auth_token_state = state.get("auth_token")
-    if auth_token is not None and auth_token_state is None:
-        auth_token_state = auth_token
+        return {
+            "error": None,
+            "messages": [response],
+            "system_message": system_prompt_state,
+            "llm": llm_state,
+            "user_id": user_id_state,
+            "auth_token": auth_token_state,
+            "session_id": session_id_state,
+            "agent_id": agent_id_state,
+        }
 
-    if auth_token_state is None:
-        raise ValueError("auth_token value is required!")
+    except Exception as e:
+        logger.error(f"Error in chat_node: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "messages": messages,
+            "system_message": system_prompt_state,
+            "llm": llm_state,
+            "user_id": user_id_state,
+            "auth_token": auth_token_state,
+            "session_id": session_id_state,
+            "agent_id": agent_id_state,
+        }
 
-    await verify_token(auth_token_state)
 
-    system_prompt_state = state.get("system_message")
-
-    if system_prompt_state is None and agent_id is not None:
-        agent = await get_agent(agent_id)
-        system_prompt_state = agent.system_prompt
-
-    messages = state["messages"]
-    if system_prompt_state:
-        messages = [SystemMessage(content=system_prompt_state)] + messages
-    llm_state = state.get("llm")
-    user_id_state = state.get("user_id")
-    session_id_state = state.get("session_id")
-    agent_id_state = state.get("agent_id")
-    if llm is not None and llm_state is None:
-        llm_state = llm
-    if user_id is not None and user_id_state is None:
-        user_id_state = user_id
-    if session_id is not None and session_id_state is None:
-        session_id_state = session_id
-    if agent_id is not None and agent_id_state is None:
-        agent_id_state = agent_id
-
-    if llm_state is None:
-        raise ValueError("LLM value is required!")
-    if user_id_state is None:
-        raise ValueError("user_id value is required!")
-    if session_id_state is None:
-        raise ValueError("session_id value is required!")
-    if agent_id_state is None:
-        raise ValueError("agent_id value is required!")
-
-    response = await process_query(
-        messages=messages,
-        user_id=user_id_state,
-        session_id=session_id_state,
-        llm=llm_state,
-        agent_id=agent_id_state,
-    )
-    return {
-        "messages": [response],
-        "system_message": system_prompt_state,
-        "llm": llm_state,
-        "user_id": user_id_state,
-        "auth_token": auth_token_state,
-        "session_id": session_id_state,
-        "agent_id": agent_id_state,
-    }
+def error_router(state: OverallState):
+    if state.get("error"):
+        return END
+    return "chat"
 
 
 chat_workflow = StateGraph(OverallState, input=InputState, output=OutputState)
+chat_workflow.add_node("verification", verification_node)
 chat_workflow.add_node("chat", chat_node)
 
-chat_workflow.set_entry_point("chat")
+chat_workflow.set_entry_point("verification")
+chat_workflow.add_conditional_edges(
+    "verification",
+    error_router,
+    [END, "chat"],
+)
 chat_workflow.add_edge("chat", END)
-checkpointer = MemorySaver()
-chat_graph = chat_workflow.compile(checkpointer=checkpointer)
-
-
-# async def test_chat_graph():
-#     """Test chat_graph with a sample input."""
-
-#     response = await chat_graph.ainvoke(
-#         {"messages": [HumanMessage("Hi")]},  # first positional argument: input
-#         {
-#             "configurable": {
-#                 "user_id": "XViAlHlCmlCDcQL8qGz7a5JhMAIMsqcu",
-#                 "agent_id": "64d60d70-ae87-4be2-978f-79f6ea43adf1",
-#                 "llm": "gpt-4.1-mini",
-#                 "thread_id": "5454",
-#                 "auth_token": "test_auth_token",
-#             }
-#         },  # second positional argument: RunnableConfig
-#     )
-#     print(response)
-
-
-# if __name__ == "__main__":
-#     import asyncio
-
-#     asyncio.run(test_chat_graph())

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
-    azure_api_key: Optional[str] = None
+    azure_api_key: str = ""
     azure_endpoint: Optional[str] = None
     frontend_app_url: str = "http://localhost:3000"
     langfuse_public_key: Optional[str] = None

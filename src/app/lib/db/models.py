@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, String
+from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Column, Field, ForeignKey, SQLModel
 
@@ -121,7 +121,6 @@ class SubscriptionModel(SQLModel, table=True):
     status: str = Field(nullable=False)
     statusFormatted: str = Field(nullable=False)
     renewsAt: Optional[str] = Field(default=None)
-    usage: int = Field(default=0, sa_column=Column(BigInteger()))
     endsAt: Optional[str] = Field(default=None)
     trialEndsAt: Optional[str] = Field(default=None)
     price: str = Field(nullable=False)
@@ -130,3 +129,13 @@ class SubscriptionModel(SQLModel, table=True):
     subscriptionItemId: int = Field(nullable=False)
     userId: str = Field(foreign_key="user.id", nullable=False)
     planId: int = Field(foreign_key="plan.id", nullable=False)
+
+
+class UsageModel(SQLModel, table=True):
+    __tablename__: str = "usage"
+
+    id: int = Field(primary_key=True, nullable=False)
+    userId: str = Field(foreign_key="user.id", nullable=False)
+    planName: str = Field(nullable=False)
+    executionCount: int = Field(default=0, nullable=False)
+    updatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
