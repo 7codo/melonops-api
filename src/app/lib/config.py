@@ -1,7 +1,10 @@
+import logging
 from functools import lru_cache
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -28,4 +31,6 @@ def get_settings() -> Settings:
     Returns:
         Settings: Application settings loaded from environment
     """
-    return Settings()  # type: ignore
+    settings = Settings()  # type: ignore
+    logger.info(f"Loaded settings: {settings.model_dump()}")
+    return settings
