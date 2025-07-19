@@ -36,7 +36,7 @@ mcps_passport = {
 
 tokens_passport = {
     "free": {
-        "gpt-4.1-mini": 5000,
+        "gpt-4.1-mini": 25000,
         "gpt-4.1": 0,
         "gemini-flash": 0,
         "gemini-2.5-pro": 0,

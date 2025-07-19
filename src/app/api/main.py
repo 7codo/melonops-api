@@ -47,19 +47,22 @@ logging.warning(f"Current settings: {settings.model_dump()}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Langfuse(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=settings.langfuse_host,
-    )
-    langfuse = get_client()
-    if langfuse.auth_check():
-        logger.info("Langfuse client is authenticated and ready!")
-    else:
-        logger.info("Authentication failed. Please check your credentials and host.")
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
+        Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            host=settings.langfuse_host,
+        )
+        langfuse = get_client()
+        if langfuse.auth_check():
+            logger.info("Langfuse client is authenticated and ready!")
+        else:
+            logger.info(
+                "Authentication failed. Please check your credentials and host."
+            )
+
         logger.info("Setting up checkpointer...")
 
         await checkpointer.setup()
