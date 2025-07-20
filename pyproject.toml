@@ -10,7 +10,7 @@ dependencies = [
     "fastapi[standard]==0.115.14",
     "copilotkit==0.1.49",
     "langgraph==0.3.18",
-    "langchain==0.3.21",
+    "langchain>=0.3.21",
     "langchain-azure-ai==0.1.4",
     "langchain-community==0.3.26",
     "langchain-google-genai==2.1.5",
