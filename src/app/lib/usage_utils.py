@@ -179,9 +179,9 @@ def get_llm_usage_for_active_subscription_range(
             active_sub = subscriptions[0]
             ends_at = None
             if active_sub.renewsAt:
-                ends_at = datetime.fromisoformat(active_sub.renewsAt)
+                ends_at = parse_iso_datetime(active_sub.renewsAt)
             elif active_sub.endsAt:
-                ends_at = datetime.fromisoformat(active_sub.endsAt)
+                ends_at = parse_iso_datetime(active_sub.endsAt)
             if not ends_at:
                 logger.error(
                     f"Active subscription for user_id={user_id} has no renewsAt or endsAt date."
@@ -361,3 +361,12 @@ def get_tokens_by_session_and_user(
         f"Returning tokens={tokens} for user_id={user_id}, session_id={session_id}, agent_id={agent_id}, selected_llm={selected_llm}."
     )
     return tokens
+
+
+def parse_iso_datetime(dt_str: str) -> datetime:
+    """
+    Parse an ISO 8601 datetime string, handling 'Z' as UTC.
+    """
+    if dt_str.endswith("Z"):
+        dt_str = dt_str.replace("Z", "+00:00")
+    return datetime.fromisoformat(dt_str)
