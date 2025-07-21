@@ -1,5 +1,5 @@
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from langchain_core.tools.base import BaseTool
@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.lib.caching_utils import async_cached_function
 from app.lib.config import get_settings
 from app.lib.db.database import engine
-from app.lib.db.models import AccountModel, MCPModel
+from app.lib.db.models import AccountModel, MCPModel, SessionModel
 from app.lib.db.queries import get_current_timestamp
 from app.lib.usage_utils import check_allowed_mcps
 
@@ -80,6 +80,24 @@ async def get_tools_from_mcps(mcp_ids: list[str], user_id: str) -> list[BaseTool
                                 status_code=400,
                                 detail=f"The access token for provider ID {mcp.provider_id} has expired. Please reauthenticate to continue.",
                             )
+                        # Fetch the latest valid session token for the user
+
+                        with Session(engine) as db_session:
+                            session_stmt = (
+                                select(SessionModel)
+                                .where(
+                                    SessionModel.user_id == user_id,
+                                    SessionModel.expires_at > datetime.utcnow(),
+                                )
+                                .order_by(SessionModel.expires_at.desc())
+                            )
+                            user_session = db_session.exec(session_stmt).first()
+                            if not user_session:
+                                raise HTTPException(
+                                    status_code=401,
+                                    detail="No valid session found for user.",
+                                )
+                            session_token = user_session.token
                         params["headers"] = {
                             "X-ACCESS-TOKEN": account.access_token,
                             "X-REFRESH-TOKEN": account.refresh_token,
@@ -91,8 +109,10 @@ async def get_tools_from_mcps(mcp_ids: list[str], user_id: str) -> list[BaseTool
                             else None,
                             "X-CLIENT-ID": settings.google_client_id,
                             "X-CLIENT-SECRET": settings.google_client_secret,
+                            "Authorization": f"Bearer {session_token}",
                         }
                         logger.debug(f"Set Google headers for MCP {mcp.id}")
+
             server_params[mcp.name] = params
             logger.info(f"Server params set for MCP {mcp.name}")
 

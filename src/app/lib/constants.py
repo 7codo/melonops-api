@@ -23,7 +23,10 @@ models_passport = {
 }
 
 
-free_mcps_passport = ["009ff9fb-1883-4d50-b5bf-b9135c116f73"]
+free_mcps_passport = [
+    "009ff9fb-1883-4d50-b5bf-b9135c116f73",
+    "148434b1-bdc1-46e0-829f-fe2616fa2f75",
+]
 starter_mcps_passport = [*free_mcps_passport]
 pro_mcps_passport = [*starter_mcps_passport]
 
@@ -60,3 +63,6 @@ executions_passport = {
     "starter": 500,
     "pro": 10000,
 }
+
+
+admins = ["ayoub.7codo@gmail.com"]

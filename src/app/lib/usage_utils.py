@@ -10,18 +10,30 @@ from sqlmodel import Session, select
 from app.lib.caching_utils import cached_function
 from app.lib.config import get_settings
 from app.lib.constants import (
+    admins,
     executions_passport,
     mcps_passport,
     models_passport,
     tokens_passport,
 )
 from app.lib.db.database import engine
-from app.lib.db.models import PlanModel, SubscriptionModel, UsageModel
+from app.lib.db.models import PlanModel, SubscriptionModel, UsageModel, UserModel
 
 settings = get_settings()
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+
+def get_user_email(user_id: str) -> str | None:
+    """
+    Helper to get the user's email from the UserModel by user_id.
+    """
+    with Session(engine) as session:
+        user = session.exec(select(UserModel).where(UserModel.id == user_id)).first()
+        if user:
+            return user.email
+        return None
 
 
 def get_active_subscription_plan_name(
@@ -37,6 +49,12 @@ def get_active_subscription_plan_name(
     Returns:
         Optional[str]: The plan name if user has an active subscription, None otherwise.
     """
+    # Admin bypass
+    email = get_user_email(user_id)
+    if email and email in admins:
+        logger.info(f"User {user_id} is admin ({email}), treating as 'enterprise'.")
+        return "enterprise"
+
     with Session(engine) as session:
         # 1. Query all active subscriptions for the user
         subscriptions = session.exec(

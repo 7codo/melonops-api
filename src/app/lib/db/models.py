@@ -139,3 +139,15 @@ class UsageModel(SQLModel, table=True):
     planName: str = Field(nullable=False)
     executionCount: int = Field(default=0, nullable=False)
     updatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class UserModel(SQLModel, table=True):
+    __tablename__: str = "user"
+
+    id: str = Field(primary_key=True, nullable=False)
+    name: str = Field(nullable=False)
+    email: str = Field(nullable=False, unique=True)
+    email_verified: bool = Field(default=False, nullable=False)
+    image: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
