@@ -24,6 +24,7 @@ models_passport = {
 
 
 free_mcps_passport = [
+    "a605a39a-b868-43b7-b226-1f0cb240f732",
     "009ff9fb-1883-4d50-b5bf-b9135c116f73",
     "148434b1-bdc1-46e0-829f-fe2616fa2f75",
 ]
