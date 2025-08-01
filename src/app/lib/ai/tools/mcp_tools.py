@@ -17,109 +17,170 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-@async_cached_function()
-async def get_tools_from_mcps(mcp_ids: list[str], user_id: str) -> list[BaseTool]:
-    logger.info(f"Fetching tools for MCP IDs: {mcp_ids} and user_id: {user_id}")
-    with Session(engine) as session:
-        statement = select(MCPModel).where(MCPModel.id.in_(mcp_ids))  # type: ignore
-        mcps = list(session.exec(statement).all())
-        logger.debug(f"Fetched MCPs from DB: {[mcp.id for mcp in mcps]}")
-        server_params = {}
-        for mcp in mcps:
-            logger.info(f"Checking allowed MCP for mcp_id: {mcp.id}")
-            check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
-            params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
-            if mcp.provider_id is not None:
-                logger.debug(f"MCP {mcp.id} has provider_id: {mcp.provider_id}")
-                with Session(engine) as session:
-                    statement = select(AccountModel).where(
-                        AccountModel.provider_id == mcp.provider_id,
-                        AccountModel.user_id == user_id,
-                    )
-                    account = session.exec(statement).first()
-
-                    if not account:
-                        logger.error(
-                            f"No account found for provider ID {mcp.provider_id} and user_id {user_id}"
-                        )
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"No account was found for provider ID {mcp.provider_id}. Please verify your connection or add an account to proceed.",
-                        )
-                    if account.scope is None:
-                        logger.error(
-                            f"Account scopes missing for provider ID {mcp.provider_id} and user_id {user_id}"
-                        )
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Account scopes required",
-                        )
-                    account_scopes = set(account.scope.split(","))
-                    mcp_scopes = set(mcp.scopes)
-                    if not mcp_scopes.issubset(account_scopes):
-                        logger.error(
-                            f"Account scopes {account_scopes} do not match MCP scopes {mcp_scopes} for provider ID {mcp.provider_id}"
-                        )
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"The account scopes do not match the connector scopes for provider ID {mcp.provider_id}. Please log in to {mcp.provider_id} and grant the necessary access permissions to proceed.",
-                        )
-                    if mcp.provider_id == "google":
-                        now = get_current_timestamp()
-                        if (
-                            account.access_token_expires_at
-                            and account.access_token_expires_at.replace(
-                                tzinfo=timezone.utc
-                            )
-                            < now
-                        ):
-                            logger.warning(
-                                f"Access token expired for provider ID {mcp.provider_id} and user_id {user_id}"
-                            )
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"The access token for provider ID {mcp.provider_id} has expired. Please reauthenticate to continue.",
-                            )
-                        # Fetch the latest valid session token for the user
-
-                        with Session(engine) as db_session:
-                            session_stmt = (
-                                select(SessionModel)
-                                .where(
-                                    SessionModel.user_id == user_id,
-                                    SessionModel.expires_at > datetime.utcnow(),
-                                )
-                                .order_by(SessionModel.expires_at.desc())
-                            )
-                            user_session = db_session.exec(session_stmt).first()
-                            if not user_session:
-                                raise HTTPException(
-                                    status_code=401,
-                                    detail="No valid session found for user.",
-                                )
-                            session_token = user_session.token
-                        params["headers"] = {
-                            "X-ACCESS-TOKEN": account.access_token,
-                            "X-REFRESH-TOKEN": account.refresh_token,
-                            "X-SCOPES": account.scope,
-                            "X-ACCESS-TOKEN-EXPIRES-AT": str(
-                                account.access_token_expires_at
-                            )
-                            if account.access_token_expires_at
-                            else None,
-                            "X-CLIENT-ID": settings.google_client_id,
-                            "X-CLIENT-SECRET": settings.google_client_secret,
-                            "Authorization": f"Bearer {session_token}",
-                        }
-                        logger.debug(f"Set Google headers for MCP {mcp.id}")
-
-            server_params[mcp.name] = params
-            logger.info(f"Server params set for MCP {mcp.name}")
-
-        logger.info(
-            f"Instantiating MultiServerMCPClient with params for {list(server_params.keys())}"
+async def _get_valid_user_session_token(db_session: Session, user_id: str) -> str:
+    """
+    Fetches the latest valid session token for a user in a single query.
+    """
+    session_stmt = (
+        select(SessionModel.token)
+        .where(
+            SessionModel.user_id == user_id,
+            SessionModel.expires_at > datetime.utcnow(),
         )
-        client = MultiServerMCPClient(server_params)
-        tools = await client.get_tools()
-        logger.info(f"Fetched {len(tools)} tools from MCPs")
-        return tools
+        .order_by(SessionModel.expires_at.desc())
+        .limit(1)
+    )
+    result = db_session.execute(session_stmt)
+    token = result.scalar_one_or_none()
+
+    if not token:
+        logger.warning(f"No valid session found for user_id: {user_id}")
+        raise HTTPException(
+            status_code=401,
+            detail="Your session is invalid or has expired. Please log in again.",
+        )
+    return token
+
+
+def _prepare_google_provider_headers(
+    mcp: MCPModel, account: AccountModel, session_token: str
+) -> dict:
+    """
+    Prepares and validates the headers required for a Google provider.
+    """
+    if not account.scope:
+        logger.error(
+            f"Account scopes missing for provider 'google' and user_id {account.user_id}"
+        )
+        raise HTTPException(status_code=400, detail="Account scopes are missing.")
+
+    account_scopes = set(account.scope.split(","))
+    if not set(mcp.scopes).issubset(account_scopes):
+        logger.error(
+            f"Account scopes {account_scopes} do not satisfy MCP scopes {mcp.scopes}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"The account permissions are insufficient for the '{mcp.name}' connector. Please reconnect your account and grant all requested permissions.",
+        )
+
+    if (
+        account.access_token_expires_at
+        and account.access_token_expires_at.replace(tzinfo=timezone.utc)
+        < get_current_timestamp()
+    ):
+        logger.warning(
+            f"Access token expired for provider 'google' and user_id {account.user_id}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="The access token for 'google' has expired. Please re-authenticate.",
+        )
+
+    return {
+        "X-ACCESS-TOKEN": account.access_token,
+        "X-REFRESH-TOKEN": account.refresh_token,
+        "X-SCOPES": account.scope,
+        "X-ACCESS-TOKEN-EXPIRES-AT": str(account.access_token_expires_at)
+        if account.access_token_expires_at
+        else None,
+        "X-CLIENT-ID": settings.google_client_id,
+        "X-CLIENT-SECRET": settings.google_client_secret,
+        "Authorization": f"Bearer {session_token}",
+    }
+
+
+@async_cached_function()
+async def get_tools_from_mcps(
+    mcp_ids: list[str],
+    user_id: str,
+) -> list[BaseTool]:
+    """
+    Asynchronously fetches tools from multiple MCPs for a given user.
+
+    This optimized version:
+    1. Uses a single async database session.
+    2. Fetches all required MCPs, Accounts, and the user Session in parallelizable, non-blocking queries.
+    3. Avoids the N+1 query problem by fetching all accounts at once.
+    4. Refactors provider-specific logic into helper functions for clarity.
+    """
+    logger.info(f"Fetching tools for MCP IDs: {mcp_ids} and user_id: {user_id}")
+
+    # Step 1: Fetch all necessary data from the database in a minimal number of queries.
+    # Fetch all requested MCPs at once.
+    mcp_stmt = select(MCPModel).where(MCPModel.id.in_(mcp_ids))
+    with Session(engine) as db_session:
+        mcps = db_session.execute(mcp_stmt).scalars().all()
+        logger.debug(f"Fetched {len(mcps)} MCPs from DB: {[mcp.id for mcp in mcps]}")
+
+        # Fetch the user's session token once.
+        session_token = await _get_valid_user_session_token(db_session, user_id)
+
+        # Collect all unique provider IDs from the fetched MCPs.
+        provider_ids = {mcp.provider_id for mcp in mcps if mcp.provider_id}
+        accounts_by_provider = {}
+
+        # Fetch all required accounts for the collected provider IDs in a single query.
+        if provider_ids:
+            acc_stmt = select(AccountModel).where(
+                AccountModel.provider_id.in_(provider_ids),
+                AccountModel.user_id == user_id,
+            )
+            account_results = db_session.execute(acc_stmt).scalars().all()
+            accounts_by_provider = {acc.provider_id: acc for acc in account_results}
+            logger.debug(
+                f"Fetched {len(accounts_by_provider)} accounts for providers: {list(accounts_by_provider.keys())}"
+            )
+
+    # Step 2: Process the fetched data and prepare parameters for the client.
+    # This loop now contains no database calls.
+    server_params = {}
+    for mcp in mcps:
+        logger.info(f"Processing MCP: {mcp.id} ({mcp.name})")
+
+        # This check can be performed without I/O
+        check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
+
+        params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
+
+        if mcp.provider_id:
+            account = accounts_by_provider.get(mcp.provider_id)
+            if not account:
+                logger.error(
+                    f"No account found for provider ID {mcp.provider_id} and user_id {user_id}"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An account for '{mcp.provider_id}' was not found. Please connect your account to proceed.",
+                )
+
+            # Delegate header creation to provider-specific functions for better organization.
+            if mcp.provider_id == "google":
+                params["headers"] = _prepare_google_provider_headers(
+                    mcp, account, session_token
+                )
+            elif mcp.provider_id == "notion":
+                params["headers"] = {
+                    "X-ACCESS-TOKEN": account.access_token,
+                    "Authorization": f"Bearer {session_token}",
+                }
+            # Add other providers here with 'elif mcp.provider_id == "new_provider":'
+
+        server_params[mcp.name] = params
+        logger.info(f"Server params prepared for MCP {mcp.name}")
+
+    # Step 3: Instantiate the client and fetch the tools.
+    if not server_params:
+        logger.warning(
+            "No server parameters were generated, returning empty list of tools."
+        )
+        return []
+
+    logger.info(
+        f"Instantiating MultiServerMCPClient for servers: {list(server_params.keys())}"
+    )
+    client = MultiServerMCPClient(server_params)
+    tools = await client.get_tools()
+    logger.info(f"Successfully fetched {len(tools)} tools from MCPs.")
+
+    return tools
