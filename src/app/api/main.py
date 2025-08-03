@@ -194,11 +194,7 @@ async def delete_checkpointer(
 def main():
     """Run the uvicorn server."""
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(
-        "app.api.main:app",
-        host="localhost",
-        port=port,
-    )
+    uvicorn.run("app.api.main:app", host="localhost", port=port, reload=True)
 
 
 if __name__ == "__main__":

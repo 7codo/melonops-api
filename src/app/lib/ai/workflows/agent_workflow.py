@@ -1,6 +1,8 @@
+import json
 import logging
 
 from copilotkit import CopilotKitState
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
@@ -142,11 +144,30 @@ async def agent_node(state: OverallState, config: RunnableConfig):
             name=sanitized_name,
             prompt=system_prompt_state,
         )
-        response = await agent.ainvoke({"messages": messages}, config)
-        messages = response["messages"]
+
+        processed_messages = []
+        for message in messages:
+            if isinstance(message, HumanMessage) and isinstance(message.content, str):
+                try:
+                    parsed_content = json.loads(message.content)
+
+                    new_message = message.model_copy(update={"content": parsed_content})
+                    processed_messages.append(new_message)
+                except json.JSONDecodeError:
+                    processed_messages.append(message)
+            else:
+                processed_messages.append(message)
+
+        response = await agent.ainvoke({"messages": processed_messages}, config)
+
+        processed_ids = {msg.id for msg in processed_messages}
+        response_messages = [
+            msg for msg in response["messages"] if msg.id not in processed_ids
+        ]
+
         return {
             "error": None,
-            "messages": messages,
+            "messages": response_messages,
             "user_id": user_id_state,
             "agent_id": agent_id_state,
             "llm": llm_state,

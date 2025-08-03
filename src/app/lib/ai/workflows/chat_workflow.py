@@ -1,7 +1,8 @@
+import json
 import logging
 
 from copilotkit import CopilotKitState
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
@@ -39,6 +40,7 @@ async def verification_node(state: OverallState, config: RunnableConfig):
     auth_token_state = state.get("auth_token", None)
     session_id_state = state.get("session_id", None)
     agent_id_state = state.get("agent_id", None)
+
     try:
         configurable = config.get("configurable", {})
 
@@ -126,7 +128,20 @@ async def chat_node(state: OverallState, config: RunnableConfig):
             updated_messages = [SystemMessage(content=system_prompt_state), *messages]
             messages = updated_messages
 
-        response = await model.ainvoke(messages, config)
+        processed_messages = []
+        for message in messages:
+            if isinstance(message, HumanMessage) and isinstance(message.content, str):
+                try:
+                    parsed_content = json.loads(message.content)
+
+                    new_message = message.model_copy(update={"content": parsed_content})
+                    processed_messages.append(new_message)
+                except json.JSONDecodeError:
+                    processed_messages.append(message)
+            else:
+                processed_messages.append(message)
+
+        response = await model.ainvoke(processed_messages, config)
 
         return {
             "error": None,
