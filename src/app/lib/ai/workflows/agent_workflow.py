@@ -7,7 +7,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
 
-from app.lib.actions import generate_tools, get_agent, get_right_model, verify_token
+from app.lib.actions import (
+    generate_tools_prompts,
+    get_agent,
+    get_right_model,
+    verify_token,
+)
 from app.lib.config import get_settings
 from app.lib.usage_utils import check_llm_token_limit, check_usage_limit
 
@@ -84,6 +89,7 @@ async def verification_node(state: OverallState, config: RunnableConfig):
 
         if name_state is None or system_prompt_state is None or tools_ids_state is None:
             agent_data = await get_agent(agent_id_state)
+
             name_state = agent_data.name
             if name_state is not None and name_state != "Untitled Agent":
                 system_prompt_state = (
@@ -128,21 +134,40 @@ async def agent_node(state: OverallState, config: RunnableConfig):
     session_id_state = state.get("session_id")
     agent_id_state = state.get("agent_id")
     tools_ids_state = state.get("tools_ids")
-    system_prompt_state = state.get("system_message")
+    system_prompt_state = state.get("system_prompt")
     name_state = state.get("name")
 
     messages = state["messages"]
     try:
         model = get_right_model(llm=llm_state, user_id=user_id_state)
-        tools = await generate_tools(
+        result = await generate_tools_prompts(
             agent_id=agent_id_state, user_id=user_id_state, tools_ids=tools_ids_state
         )
+
         sanitized_name = name_state.replace(" ", "_") if name_state else "agent"
+
+        # Format the prompts dictionary into a readable string
+        formatted_prompts = "\n".join(
+            f"- {provider} connector guidelines: {prompt}"
+            for provider, prompt in result["prompts"].items()
+            if prompt
+        )
+
+        updated_system_prompt = f"""
+        Connector Guidelines:
+        {formatted_prompts}
+        
+        ---
+
+        System Prompt:
+        {system_prompt_state}
+        """
+
         agent = create_react_agent(
             model,
-            tools=tools,
+            tools=result["tools"],
             name=sanitized_name,
-            prompt=system_prompt_state,
+            prompt=updated_system_prompt,
         )
 
         processed_messages = []

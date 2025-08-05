@@ -128,8 +128,11 @@ async def get_tools(
 ):
     """Get tools from MCPs."""
     try:
-        tools = await get_tools_from_mcps(request.mcps_ids, request.user_id)
-        return [{"name": tool.name, "description": tool.description} for tool in tools]
+        result = await get_tools_from_mcps(request.mcps_ids, request.user_id)
+        return [
+            {"name": tool.name, "description": tool.description}
+            for tool in result["tools"]
+        ]
     except Exception as e:
         logger.error(f"Error in get_tools: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tools: {str(e)}")

@@ -59,7 +59,7 @@ def get_right_model(
 
 
 @async_cached_function()
-async def generate_tools(*, agent_id: str, user_id: str, tools_ids: list[str]):
+async def generate_tools_prompts(*, agent_id: str, user_id: str, tools_ids: list[str]):
     """
     Retrieve agent data and associated tools for a given agent and user.
 
@@ -80,18 +80,23 @@ async def generate_tools(*, agent_id: str, user_id: str, tools_ids: list[str]):
         mcp_ids: list[str] = [str(link.mcp_id) for link in agent_mcp_links]
 
         tools = []
+        prompts = {}
+
         if mcp_ids:
-            # Generate tools from MCPs
-            all_tools = await get_tools_from_mcps(mcp_ids, user_id)
-            # Filter tools based on tools_ids if provided
-            if tools_ids and len(tools_ids) > 0:
-                tools = [tool for tool in all_tools if tool.name in tools_ids]
+            # Generate tools and prompts from MCPs
+            result = await get_tools_from_mcps(mcp_ids, user_id)
+
+            # Filter tools based on tool_ids if provided
+            if tools_ids:
+                tools = [tool for tool in result["tools"] if tool.name in tools_ids]
             else:
-                tools = all_tools
+                tools = result["tools"]
+
+            prompts = result["prompts"]
 
         # Prepare enhanced agent data dictionary
         logger.info(f"Returning tools for agent_id={agent_id}, user_id={user_id}.")
-        return tools
+        return {"tools": tools, "prompts": prompts}
 
 
 @async_cached_function()

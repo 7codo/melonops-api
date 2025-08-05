@@ -141,7 +141,11 @@ async def get_tools_from_mcps(
         # This check can be performed without I/O
         check_allowed_mcps(mcp_id=str(mcp.id), user_id=user_id)
 
-        params = {"url": mcp.url, "transport": "streamable_http", "headers": {}}
+        params = {
+            "url": mcp.url,
+            "transport": "streamable_http",
+            "headers": {},
+        }
 
         if mcp.provider_id:
             account = accounts_by_provider.get(mcp.provider_id)
@@ -181,6 +185,18 @@ async def get_tools_from_mcps(
     )
     client = MultiServerMCPClient(server_params)
     tools = await client.get_tools()
-    logger.info(f"Successfully fetched {len(tools)} tools from MCPs.")
 
-    return tools
+    prompts = {}
+    for mcp in mcps:
+        try:
+            prompt = await client.get_prompt(mcp.name, "instructions")
+            prompts[mcp.name] = prompt[0].content
+            logger.info(f"Fetched prompt for MCP {mcp.name}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch prompt for {mcp.name}: {e}")
+            prompts[mcp.name] = ""
+
+    logger.info(f"Successfully fetched {len(tools)} tools from MCPs.")
+    logger.info(f"prompts {len(prompts)}")
+
+    return {"tools": tools, "prompts": prompts}
