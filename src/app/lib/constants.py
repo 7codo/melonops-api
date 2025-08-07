@@ -1,19 +1,17 @@
 azure_api_version = "2025-01-01-preview"
 
-support_openai_models = ["gpt-4.1-mini", "gpt-4.1"]
-support_google_models = ["gemini-flash", "gemini-2.5-pro"]
-default_model = "gpt-4.1-mini"
+support_openai_models = ["gpt-4.1"]
+support_google_models = ["gemini-2.5-pro"]
+default_model = "gpt-4.1"
 support_models = support_openai_models + support_google_models
 
 # Computed values
 
 
-free_models_passport = ["gpt-4.1-mini"]
-starter_models_passport = [*free_models_passport, "gpt-4.1"]
+free_models_passport = ["gpt-4.1"]
+starter_models_passport = [*free_models_passport, "gemini-2.5-pro"]
 pro_models_passport = [
     *starter_models_passport,
-    "gemini-2.5-pro",
-    "gemini-flash",
 ]
 
 models_passport = {
@@ -40,29 +38,23 @@ mcps_passport = {
 
 tokens_passport = {
     "free": {
-        "gpt-4.1-mini": 25000,
-        "gpt-4.1": 0,
-        "gemini-flash": 0,
+        "gpt-4.1": 500000,
         "gemini-2.5-pro": 0,
     },
     "starter": {
-        "gpt-4.1-mini": 25000,
-        "gpt-4.1": 125000,
-        "gemini-flash": 0,
+        "gpt-4.1": 1000000,
         "gemini-2.5-pro": 0,
     },
     "pro": {
-        "gpt-4.1-mini": 125000,
-        "gpt-4.1": 125000,
-        "gemini-flash": 125000,
-        "gemini-2.5-pro": 125000,
+        "gpt-4.1": 1000000,
+        "gemini-2.5-pro": 1000000,
     },
 }
 
 executions_passport = {
-    "free": 5,
-    "starter": 500,
-    "pro": 10000,
+    "free": 25,
+    "starter": 1000,
+    "pro": 100000,
 }
 
 
