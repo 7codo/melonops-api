@@ -172,7 +172,10 @@ async def get_tools_from_mcps(
                 params["headers"] = {
                     "Authorization": f"Bearer {session_token}",
                 }
-            # Add other providers here with 'elif mcp.provider_id == "new_provider":'
+        else:
+            params["headers"] = {
+                "Authorization": f"Bearer {session_token}",
+            }
 
         server_params[mcp.name] = params
         logger.info(f"Server params prepared for MCP {mcp.name}")

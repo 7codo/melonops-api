@@ -50,11 +50,12 @@ async def lifespan(app: FastAPI):
     async with AsyncPostgresSaver.from_conn_string(
         settings.database_url
     ) as checkpointer:
-        Langfuse(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=settings.langfuse_host,
-        )
+        if settings.env != "DEV":
+            Langfuse(
+                public_key=settings.langfuse_public_key,
+                secret_key=settings.langfuse_secret_key,
+                host=settings.langfuse_host,
+            )
         langfuse = get_client()
         if langfuse.auth_check():
             logger.info("Langfuse client is authenticated and ready!")
