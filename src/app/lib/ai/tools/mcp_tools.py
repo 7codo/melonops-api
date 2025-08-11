@@ -168,6 +168,10 @@ async def get_tools_from_mcps(
                     "X-ACCESS-TOKEN": account.access_token,
                     "Authorization": f"Bearer {session_token}",
                 }
+            else:
+                params["headers"] = {
+                    "Authorization": f"Bearer {session_token}",
+                }
             # Add other providers here with 'elif mcp.provider_id == "new_provider":'
 
         server_params[mcp.name] = params
