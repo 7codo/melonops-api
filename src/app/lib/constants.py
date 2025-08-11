@@ -22,11 +22,12 @@ models_passport = {
 
 
 free_mcps_passport = [
-    "a605a39a-b868-43b7-b226-1f0cb240f732",
-    "009ff9fb-1883-4d50-b5bf-b9135c116f73",
-    "148434b1-bdc1-46e0-829f-fe2616fa2f75",
+    "a605a39a-b868-43b7-b226-1f0cb240f732",  # Notion
 ]
-starter_mcps_passport = [*free_mcps_passport]
+starter_mcps_passport = [
+    *free_mcps_passport,
+    "5b4e7741-0490-4325-bf84-d4549d6686cb",  # Web Search
+]
 pro_mcps_passport = [*starter_mcps_passport]
 
 
