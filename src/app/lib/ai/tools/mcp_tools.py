@@ -90,6 +90,48 @@ def _prepare_google_provider_headers(
     }
 
 
+def _prepare_reddit_provider_headers(
+    mcp: MCPModel, account: AccountModel, session_token: str
+) -> dict:
+    """
+    Prepares and validates the headers required for a reddit provider.
+    """
+    if not account.scope:
+        logger.error(
+            f"Account scopes missing for provider 'reddit' and user_id {account.user_id}"
+        )
+        raise HTTPException(status_code=400, detail="Account scopes are missing.")
+
+    account_scopes = set(account.scope.split(","))
+    if not set(mcp.scopes).issubset(account_scopes):
+        logger.error(
+            f"Account scopes {account_scopes} do not satisfy MCP scopes {mcp.scopes}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"The account permissions are insufficient for the '{mcp.name}' connector. Please reconnect your account and grant all requested permissions.",
+        )
+
+    if (
+        account.access_token_expires_at
+        and account.access_token_expires_at.replace(tzinfo=timezone.utc)
+        < get_current_timestamp()
+    ):
+        logger.warning(
+            f"Access token expired for provider 'reddit' and user_id {account.user_id}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="The access token for 'reddit' has expired. Please re-authenticate.",
+        )
+
+    return {
+        "X-ACCESS-TOKEN": account.access_token,
+        "X-REFRESH-TOKEN": account.refresh_token,
+        "Authorization": f"Bearer {session_token}",
+    }
+
+
 @async_cached_function()
 async def get_tools_from_mcps(
     mcp_ids: list[str],
@@ -168,10 +210,10 @@ async def get_tools_from_mcps(
                     "X-ACCESS-TOKEN": account.access_token,
                     "Authorization": f"Bearer {session_token}",
                 }
-            else:
-                params["headers"] = {
-                    "Authorization": f"Bearer {session_token}",
-                }
+            elif mcp.provider_id == "reddit":
+                params["headers"] = _prepare_reddit_provider_headers(
+                    mcp, account, session_token
+                )
         else:
             params["headers"] = {
                 "Authorization": f"Bearer {session_token}",
