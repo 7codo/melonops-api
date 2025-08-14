@@ -23,6 +23,7 @@ models_passport = {
 
 free_mcps_passport = [
     "a605a39a-b868-43b7-b226-1f0cb240f732",  # Notion
+    "d649e0eb-ee31-4fa6-9a09-e95a7380d564",  # Reddit
 ]
 starter_mcps_passport = [
     *free_mcps_passport,
